@@ -831,17 +831,19 @@ widget App {
                 .quick.push({ path: "demo://home", label: "主目录", is_home: true })
                 .quick.push({ path: "demo://docs", label: "文档", is_home: false })
                 .quick.push({ path: "demo://pics", label: "图片", is_home: false })
+                // PLAN-045：演示目录同样走快照 schema（mtime 占位 0/
+                // name_key 预小写）+ RefreshView 派生——排序/过滤/隐藏
+                // 在演示态与真盘态同路径可达（此前 demo 行直塞 files_view，
+                // 交互派生会清空演示列表）。
                 var demo = []
-                demo.push({ id: 0, name: "Documents", path: "demo://home/Documents", is_dir: true, size: 0, size_str: "", file_ext: "", type_name: "文件夹", date: "2026-09-20 10:00", is_hidden: false, thumb_src: "" })
-                demo.push({ id: 1, name: "Pictures", path: "demo://home/Pictures", is_dir: true, size: 0, size_str: "", file_ext: "", type_name: "文件夹", date: "2026-09-20 10:00", is_hidden: false, thumb_src: "" })
-                demo.push({ id: 2, name: "Downloads", path: "demo://home/Downloads", is_dir: true, size: 0, size_str: "", file_ext: "", type_name: "文件夹", date: "2026-09-18 09:12", is_hidden: false, thumb_src: "" })
-                demo.push({ id: 3, name: "readme.md", path: "demo://home/readme.md", is_dir: false, size: 2048, size_str: "2 KB", file_ext: "md", type_name: "Markdown", date: "2026-09-21 14:30", is_hidden: false, thumb_src: "" })
-                demo.push({ id: 4, name: "report.pdf", path: "demo://home/report.pdf", is_dir: false, size: 245760, size_str: "240 KB", file_ext: "pdf", type_name: "PDF", date: "2026-09-19 11:05", is_hidden: false, thumb_src: "" })
-                demo.push({ id: 5, name: "photo.png", path: "demo://home/photo.png", is_dir: false, size: 1048576, size_str: "1 MB", file_ext: "png", type_name: "图片", date: "2026-09-17 16:44", is_hidden: false, thumb_src: "" })
-                .files_view = demo
-                .has_items = true
-                .item_count_str = "6 个项目"
-                .total_size_str = "1.2 MB"
+                demo.push({ name: "Documents", path: "demo://home/Documents", is_dir: true, size: 0, mtime: 0, file_ext: "", size_str: "", type_name: "文件夹", date: "2026-09-20 10:00", is_hidden: false, name_key: "documents" })
+                demo.push({ name: "Pictures", path: "demo://home/Pictures", is_dir: true, size: 0, mtime: 0, file_ext: "", size_str: "", type_name: "文件夹", date: "2026-09-20 10:00", is_hidden: false, name_key: "pictures" })
+                demo.push({ name: "Downloads", path: "demo://home/Downloads", is_dir: true, size: 0, mtime: 0, file_ext: "", size_str: "", type_name: "文件夹", date: "2026-09-18 09:12", is_hidden: false, name_key: "downloads" })
+                demo.push({ name: "readme.md", path: "demo://home/readme.md", is_dir: false, size: 2048, mtime: 0, file_ext: "md", size_str: "2 KB", type_name: "Markdown", date: "2026-09-21 14:30", is_hidden: false, name_key: "readme.md" })
+                demo.push({ name: "report.pdf", path: "demo://home/report.pdf", is_dir: false, size: 245760, mtime: 0, file_ext: "pdf", size_str: "240 KB", type_name: "PDF", date: "2026-09-19 11:05", is_hidden: false, name_key: "report.pdf" })
+                demo.push({ name: "photo.png", path: "demo://home/photo.png", is_dir: false, size: 1048576, mtime: 0, file_ext: "png", size_str: "1 MB", type_name: "图片", date: "2026-09-17 16:44", is_hidden: false, name_key: "photo.png" })
+                .dir_entries = demo
+                .RefreshView()
                 }
                 }
                 if .is_vm == "vm" {
@@ -1129,8 +1131,13 @@ widget App {
                 var thumb_src str = ""
                 if thumb_n < 120 {
                     if is_image_ext(r.file_ext) {
-                        thumb_src = image.thumb(r.path, 256)
-                        thumb_n = thumb_n + 1
+                        // SPEC §5.5 守卫纪律：image.thumb 为抛错型 __vmOnly
+                        // 桩（vue 生成器实证）——仅 VM 轨排队，vue 轨恒空
+                        // 回落 FileIcon。
+                        if .is_vm == "vm" {
+                            thumb_src = image.thumb(r.path, 256)
+                            thumb_n = thumb_n + 1
+                        }
                     }
                 }
                 fv.push({
