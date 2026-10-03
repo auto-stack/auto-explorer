@@ -1,0 +1,122 @@
+{
+  "repository": "auto-explorer",
+  "date": "2026-10-03",
+  "sources": [
+    {
+      "repo": "auto-lang",
+      "commit": "17292c07e792e80d4e4da5495fc3fc2917e8aa1e",
+      "path": "examples/ui/027-file-manager",
+      "primary": true,
+      "fileCount": 18,
+      "pacFields": {
+        "name": "file-manager",
+        "version": "0.1.0",
+        "description": "File Manager - Dual-pane file browser & manager (vue/vm)",
+        "scene": "ui",
+        "render": "vue",
+        "api": "rust",
+        "front_port": "4027",
+        "back_port": "8027",
+        "icon": "folder",
+        "title": "File Manager",
+        "title_zh": "文件管理器",
+        "category": "system",
+        "desktop": "true",
+        "theme": "dark"
+      },
+      "files": [
+        {
+          "sourcePath": "examples/ui/027-file-manager/SPEC.md",
+          "path": "SPEC.md",
+          "sha256": "868abe0267bb0065fddcd3fdfa2b545ae88c43cede529fafa504def463c83d17"
+        },
+        {
+          "sourcePath": "examples/ui/027-file-manager/pac.at",
+          "path": "pac.at",
+          "sha256": "db8ccf00d04b6add3ed04e875c23564f17bcea8f5276d90e2a2375f4c0fd93b3"
+        },
+        {
+          "sourcePath": "examples/ui/027-file-manager/src/back/api.at",
+          "path": "src/back/api.at",
+          "sha256": "49ea61b6691b5cd79154e50372db19466786448242b53771f5cb669047735c08"
+        },
+        {
+          "sourcePath": "examples/ui/027-file-manager/src/front/app.at",
+          "path": "src/front/app.at",
+          "sha256": "15508026b406b5f5369841a6add2257c0ebf36bd96823e9f04f8ab89f0422d89"
+        },
+        {
+          "sourcePath": "examples/ui/027-file-manager/src/front/components/file_icon.at",
+          "path": "src/front/components/file_icon.at",
+          "sha256": "332442f16d6a4bd7e6045f3c1c230d562678231effd89fd0126a9e58e34c19f3"
+        },
+        {
+          "sourcePath": "examples/ui/027-file-manager/src/front/components/filetree.at",
+          "path": "src/front/components/filetree.at",
+          "sha256": "ea4d4d1587299a1012f2ef636725e14e4d19c26299667feaebfb49e8ede30a7d"
+        },
+        {
+          "sourcePath": "examples/ui/027-file-manager/src/front/components/fs_util.at",
+          "path": "src/front/components/fs_util.at",
+          "sha256": "5d2518a5f0ae664bac89573466c66eb8139f90cb4647e5a259a89c9c85b31827"
+        },
+        {
+          "sourcePath": "examples/ui/027-file-manager/src/front/components/package.at",
+          "path": "src/front/components/package.at",
+          "sha256": "d169df5e0baa3d16550f3fe57ee015e19027f0d01b957122245483413dfb05fb"
+        },
+        {
+          "sourcePath": "examples/ui/027-file-manager/src/front/components/tree_icon.at",
+          "path": "src/front/components/tree_icon.at",
+          "sha256": "5c36454142070609c5216dbce9f748325986490a1d362dca51f0d8737844e258"
+        },
+        {
+          "sourcePath": "examples/ui/027-file-manager/src/front/components/tree_util.at",
+          "path": "src/front/components/tree_util.at",
+          "sha256": "4f4ba6028ca4bc1a39091b3de8103a0bcb1a5c02ae348bebbb6ac1af268ba7a7"
+        },
+        {
+          "sourcePath": "examples/ui/027-file-manager/src/front/components/treeview.at",
+          "path": "src/front/components/treeview.at",
+          "sha256": "83a275dfea55cce223538ab89d32521476e6de7d75b2be65da1557340de5c49f"
+        },
+        {
+          "sourcePath": "examples/ui/027-file-manager/tests/desktop_mcp.py",
+          "path": "tests/desktop_mcp.py",
+          "sha256": "1f31bfda0d71b43c1ccd4e847e537c4431f49ce8595448f3db983aeda66ec9a4"
+        },
+        {
+          "sourcePath": "examples/ui/027-file-manager/tests/plan023_check.py",
+          "path": "tests/plan023_check.py",
+          "sha256": "511903a6d9c731b65c04590dacb5e3ee5e6aeecb2eaae98c05e159f78d740039"
+        },
+        {
+          "sourcePath": "examples/ui/027-file-manager/tests/testdata/.hidden.md",
+          "path": "tests/testdata/.hidden.md",
+          "sha256": "53fbdd707e62dfb1ac746c762d7e817b420d684c89444bc8d23485027284ed3d"
+        },
+        {
+          "sourcePath": "examples/ui/027-file-manager/tests/testdata/config.toml",
+          "path": "tests/testdata/config.toml",
+          "sha256": "a7cb3c9d9afdb9b38684025f052166e137b65e6dc6ddc59a49dce5b3699cbf55"
+        },
+        {
+          "sourcePath": "examples/ui/027-file-manager/tests/testdata/nested/inner.txt",
+          "path": "tests/testdata/nested/inner.txt",
+          "sha256": "feaf41c4f521c39edf5993ecb84708e679259f54db74f8ab4f4e628b588fa6cf"
+        },
+        {
+          "sourcePath": "examples/ui/027-file-manager/tests/testdata/notes.txt",
+          "path": "tests/testdata/notes.txt",
+          "sha256": "1d8647b6aef696f1f1e7034db5d9a559cd60d1318b2839b301b866362925aa5d"
+        },
+        {
+          "sourcePath": "examples/ui/027-file-manager/tests/testdata/photo.png",
+          "path": "tests/testdata/photo.png",
+          "sha256": "b1ff9c8ea3a780bad09b346c423d2d0e46815926879b18e841d928376a946640"
+        }
+      ]
+    }
+  ],
+  "note": "Exact committed source snapshots; packaging changes follow in a separate commit. References are not additional installed apps."
+}
