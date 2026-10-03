@@ -12,8 +12,8 @@ description: "File Manager - Dual-pane file browser & manager (vue/vm)"
 scene: "ui"
 render: "vue"
 api: "rust"
-front_port: 4027
-back_port: 8027
+front_port: 17840
+back_port: 17841
 icon: "folder"
 title: "File Manager"
 title_zh: "文件管理器"
@@ -22,5 +22,5 @@ desktop: "true"
 theme: "dark"
 
 dep stylekit {
-    path: "../stylekit"
+    path: "vendor/stylekit"
 }
