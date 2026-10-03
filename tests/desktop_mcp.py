@@ -143,8 +143,25 @@ class McpClient:
         return receipt
 
     def trigger(self, state, event):
-        """带参/无参 handler 派发（须伴至少一个 state 字段——fixture 契约）。"""
+        """无参 handler 派发（须伴至少一个 state 字段——fixture 契约）。
+
+        PLAN-045 适配注记：payload 编码事件名（Name\\x1f<tag>\\x1f<val>）在
+        PLAN-659 T-05 严格预检（renderer has_handler_for 直查 namespaced 键）
+        中未剥 payload 恒 miss（probe_trigger.py A/C 实证）——带参派发改走：
+        - str 参 → trigger_s（Plan 370 input 通道，probe B/E 实证等价）；
+        - int 参 → 写 ctx_id 状态 + 无参 Ctx 家族（CtxOpen/CtxRename/
+           CtxDelete/CtxSelect——handler 从 state 取行号，本就是无参形态）。"""
         return self.fixture(state, event)
+
+    def trigger_s(self, name, text, state=None):
+        """str 单参 handler 的 input 形态派发（见 trigger 注记）。"""
+        args = {"schema_version": 1, "state": state if state is not None else {"booted": True}}
+        args["trigger"] = {"widget": "App", "event": name, "input": text}
+        result = self._post("autoui_fixture", args)
+        receipt = result if isinstance(result.get("status"), str) else {}
+        if receipt.get("status") != "applied":
+            raise RuntimeError(f"fixture not applied: {receipt or result}")
+        return receipt
 
     def vtree(self):
         return self.call("autoui_vtree", include_box=False, include_style=False,
@@ -280,7 +297,7 @@ def find_row_index(mcp, name, count=None):
     if count is None:
         count = mcp.state_int("item_count_str")
     for i in range(count):
-        mcp.trigger({"booted": True}, f"ItemCtx{SEP}i{SEP}{i}")
+        mcp.trigger({"ctx_id": i}, "CtxSelect")
         time.sleep(0.12)
         if name in mcp.state_str("selected_info"):
             return i
@@ -392,7 +409,7 @@ def run_suite(mcp, workdir, result):
         time.sleep(1.0)
         result.check("T4 过滤至 1 项", mcp.state_int("item_count_str") == 1,
                      mcp.state("item_count_str").get("item_count_str", ""))
-        mcp.trigger({"search_q": ""}, f"SetSearch{SEP}s{SEP}")
+        mcp.trigger_s("SetSearch", "")
         time.sleep(1.0)
         result.check("T4 清空恢复 4 项", mcp.state_int("item_count_str") == 4,
                      mcp.state("item_count_str").get("item_count_str", ""))
@@ -404,7 +421,7 @@ def run_suite(mcp, workdir, result):
     nested_idx = find_row_index(mcp, "nested", 4)
     result.check("T5 nested 行定位", nested_idx >= 0, "probe 未命中")
     if nested_idx >= 0:
-        mcp.trigger({"booted": True}, f"OpenItem{SEP}i{SEP}{nested_idx}")
+        mcp.trigger({"ctx_id": nested_idx}, "CtxOpen")
         time.sleep(1.0)
         cur = mcp.state_str("current_path")
         result.check("T5 路径入 nested", cur.endswith("nested"), cur)
@@ -446,7 +463,7 @@ def run_suite(mcp, workdir, result):
     fr_idx = find_row_index(mcp, "fm-renamed", 5)
     result.check("T8 fm-renamed 行定位", fr_idx >= 0, "probe 未命中")
     if fr_idx >= 0:
-        mcp.trigger({"booted": True}, f"OpenItem{SEP}i{SEP}{fr_idx}")
+        mcp.trigger({"ctx_id": fr_idx}, "CtxOpen")
         time.sleep(1.0)
         want = os.path.join(data, "fm-renamed")
         result.check("T8 进入 fm-renamed", mcp.state_str("current_path") == want,
@@ -510,7 +527,7 @@ def run_suite(mcp, workdir, result):
     n_idx = find_row_index(mcp, "notes.txt", 4)
     result.check("T12 notes.txt 行定位", n_idx >= 0, "probe 未命中")
     if n_idx >= 0:
-        mcp.trigger({"booted": True}, f"ItemCtx{SEP}i{SEP}{n_idx}")
+        mcp.trigger({"ctx_id": n_idx}, "CtxSelect")
         time.sleep(0.5)
         si = mcp.state_str("selected_info")
         result.check("T12 选定状态", "notes.txt" in si, si)
