@@ -17,13 +17,14 @@
 //   排序→统计→render_cap 窗口物化，零触盘）；排序/隐藏/搜索交互不再
 //   重读盘。设计见 docs/DESIGN.md §2-§6。
 
-use components.fs_util: format_size, type_label, hidden_name, fmt_date, app_for_ext, is_image_ext, parent_of, base_name, ext_of, build_crumbs, sort_files
+use components.fs_util: format_size, type_label, hidden_name, fmt_date, app_for_ext, is_image_ext, parent_of, base_name, ext_of, build_crumbs, sort_entries
 use back.api: fs_list, fs_home, fs_drives
 use auto.process
 use auto.fs
 use auto.file
 use auto.json
 use auto.image
+use auto.time
 
 style breadcrumb_label = "text-sm text-muted-foreground font-medium"
 style row_gap1 = "items-center gap-1"
@@ -156,6 +157,10 @@ widget App {
         // 渲染层：渐进窗口（T-04 扩窗 UI 接线；窗口物化已在此口径下）
         var render_cap int = 300
         var render_step int = 500
+        // PLAN-045 T-06 前哨：应用内派生计时（ms，i64→int 截断）——
+        // 剥离 MCP fixture 仪器化开销的性能真值面（probe_perf 消费）。
+        var last_derive_ms int = -1
+        var last_snapshot_ms int = -1
 
         // 渲染视图模型（RefreshView 从快照派生；行 schema 与视图绑定一一对应）
         var files_view = [
@@ -961,6 +966,7 @@ widget App {
                     // PLAN-045：快照构建（数据层，每目录一次）——全量条目
                     // 连同展示派生字段一次物化；过滤/排序/统计移交
                     // RefreshView（派生层，零触盘）。
+                    let ts0 int = time.now_ms()
                     var snap = []
                     for raw in names {
                         let nm str = "" + raw
@@ -987,6 +993,7 @@ widget App {
                         })
                     }
                     .dir_entries = snap
+                    .last_snapshot_ms = time.now_ms() - ts0
                     .render_cap = 300
                     .RefreshView()
                 }
@@ -1091,6 +1098,7 @@ widget App {
         // 调用（image.thumb 为 __vmOnly 桩，vue 轨恒空回落）。排序/隐藏/
         // 搜索交互只改配置状态后重入本 handler。
         .RefreshView -> {
+            let t0 int = time.now_ms()
             var out = []
             var total_bytes int = 0
             var kept int = 0
@@ -1111,9 +1119,11 @@ widget App {
                 }
                 i = i + 1
             }
-            // 排序（目录恒先；PLAN-045 内仍 sort_files——T-03 换原生
-            // sort_entries 比较器族）
-            out = sort_files(out, .sort_col, .sort_dir)
+            // 排序（目录恒先；PLAN-045 T-03：选择排序退役→手写归并
+            // O(n log n) 双轨单路径——原生 sort_by 在 app VM 会话不可链
+            // （Undefined symbol 实证）；date 列 mtime int 序，同值 name
+            // 次级键）
+            out = sort_entries(out, .sort_col, .sort_dir)
             .view_total = kept
 
             // 窗口物化：render_cap 切片 + 排序后重编 id（R4-4：id = 显示序）
@@ -1160,6 +1170,7 @@ widget App {
             .has_items = (kept > 0)
             .item_count_str = kept.str() + " 个项目"
             .total_size_str = format_size(total_bytes)
+            .last_derive_ms = time.now_ms() - t0
         }
 
         .GoBack -> {

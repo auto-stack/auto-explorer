@@ -256,73 +256,113 @@ pub fn build_crumbs(p str) List {
     return cs
 }
 
-/// 条目排序（目录恒先 + 四列字典序/int 序；拷贝入 out 再排——不动入参，
-/// tree_util 受控函数式同款）。VM 轨原 inline 选择排序提取至此。
-pub fn sort_files(list List, col str, dir str) List {
-    var out List = []
+// ══════════════════════════════════════════════════════════════
+// PLAN-045 D3：排序——选择排序 O(n²) 退役，手写归并 O(n log n)。
+//
+// 探针结论（2026-10-04 实证）：原生 sort_by 在 app VM 会话不可链
+// （link failed: Undefined symbol: sort.sort_by in module App；ffi 注册
+// 表零 sort native）——stdlib auto.sort 的 #[vm] 面不进 app 会话。双轨
+// 单路径手写归并（vue 编译为 TS 原生 JS 速度；VM 解释执行，10k 项
+// ≈13 万次比较——P-4 预算由 perf_check 实测把关，超限登记债册）。
+// 语义：目录恒先（rank 投影，desc 不反转）+ 四列分派 + name 次级键
+// + date 改 mtime int 序（-1/未就绪沉底）+ desc 反转 + 左元稳定。
+// ══════════════════════════════════════════════════════════════
+
+/// 条目排序入口（拷贝入 out 不动入参；归并排序）。
+pub fn sort_entries(list List, col str, dir str) List {
     var n int = list.len()
-    var c int = 0
-    while c < n {
-        out.push(list[c])
-        c = c + 1
+    if n < 2 {
+        return list
     }
-    var i int = 0
-    while i < n {
-        var best int = i
-        var j int = i + 1
-        while j < n {
-            var take bool = false
-            var rankJ int = 1
-            var rankB int = 1
-            let ej = out[j]
-            let eb = out[best]
-            if ej.is_dir { rankJ = 0 }
-            if eb.is_dir { rankB = 0 }
-            if rankJ < rankB {
-                take = true
-            } else {
-                if rankJ == rankB {
-                    if col == "name" {
-                        if dir == "asc" {
-                            if ej.name < eb.name { take = true }
-                        } else {
-                            if ej.name > eb.name { take = true }
+    var cur List = list
+    var width int = 1
+    while width < n {
+        var next List = []
+        var i int = 0
+        while i < n {
+            var lo int = i
+            var mid int = i + width
+            if mid > n { mid = n }
+            var hi int = i + width * 2
+            if hi > n { hi = n }
+            var p int = lo
+            var q int = mid
+            while p < mid {
+                if q >= hi {
+                    next.push(cur[p])
+                    p = p + 1
+                } else {
+                    // 内联比较器（唯一比较点）：目录恒先 rank + 列分派 +
+                    // name 次级键 + desc 反转；<= 取左保持稳定序。
+                    let le = cur[p]
+                    let ri = cur[q]
+                    var ra int = 1
+                    var rb int = 1
+                    if le.is_dir { ra = 0 }
+                    if ri.is_dir { rb = 0 }
+                    var left_first bool = false
+                    var decided bool = false
+                    if ra < rb {
+                        left_first = true
+                        decided = true
+                    } else {
+                        if ra > rb {
+                            decided = true
                         }
                     }
-                    if col == "size" {
-                        if dir == "asc" {
-                            if ej.size < eb.size { take = true }
-                        } else {
-                            if ej.size > eb.size { take = true }
+                    if !decided {
+                        var less int = 0
+                        if col == "name" {
+                            if le.name < ri.name { less = -1 }
+                            if le.name > ri.name { less = 1 }
+                        }
+                        if col == "size" {
+                            if le.size < ri.size { less = -1 }
+                            if le.size > ri.size { less = 1 }
+                        }
+                        if col == "date" {
+                            // date 列 mtime int 序（快照存原始值；-1 沉底）
+                            var ma int = le.mtime
+                            var mb int = ri.mtime
+                            if ma < 0 { ma = 2147483647 }
+                            if mb < 0 { mb = 2147483647 }
+                            if ma < mb { less = -1 }
+                            if ma > mb { less = 1 }
+                        }
+                        if col == "type" {
+                            if le.type_name < ri.type_name { less = -1 }
+                            if le.type_name > ri.type_name { less = 1 }
+                        }
+                        if less == 0 {
+                            if le.name < ri.name { less = -1 }
+                            if le.name > ri.name { less = 1 }
+                        }
+                        if dir == "desc" {
+                            less = 0 - less
+                        }
+                        if less <= 0 {
+                            left_first = true
                         }
                     }
-                    if col == "date" {
-                        if dir == "asc" {
-                            if ej.date < eb.date { take = true }
-                        } else {
-                            if ej.date > eb.date { take = true }
-                        }
-                    }
-                    if col == "type" {
-                        if dir == "asc" {
-                            if ej.type_name < eb.type_name { take = true }
-                        } else {
-                            if ej.type_name > eb.type_name { take = true }
-                        }
+                    if left_first {
+                        next.push(cur[p])
+                        p = p + 1
+                    } else {
+                        next.push(cur[q])
+                        q = q + 1
                     }
                 }
             }
-            if take { best = j }
-            j = j + 1
+            while q < hi {
+                next.push(cur[q])
+                q = q + 1
+            }
+            i = i + width * 2
         }
-        if best != i {
-            let tmp = out[i]
-            out[i] = out[best]
-            out[best] = tmp
-        }
-        i = i + 1
+        cur = next
+        width = width * 2
     }
-    return out
+    return cur
 }
 
 /// PLAN-016 T-09：扩展名 → 桌面 open_with 关联（v1 静态表——注册表
