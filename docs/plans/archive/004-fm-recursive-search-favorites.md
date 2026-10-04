@@ -1,6 +1,6 @@
 ---
 plan_id: PLAN-004
-status: reviewed               # drafting → executing → execution_done → reviewed → archived
+status: archived               # drafting → executing → execution_done → reviewed → archived
 feature_name: fm-recursive-search-favorites
 author: [agent]
 created_at: 2026-10-04
@@ -228,6 +228,23 @@ var favs = []                    // storage fileman.favs [{path,label}]
   可能触发预算中止 → 搜索无操作（无崩溃、可换窄根重试）——债册登记
   F-V3；Ctrl+F 延后（ui.focus）| evidence: verify_p4 11/11 + T18
   直测（9000→8000+标注+零预算错误）| next: merge。
+
+- 2026-10-04 stage: merge | PLAN-004 | 统一落地收据：
+  - `prepared`：reviewed @ 004 终态（001 r3 / 002 r1 / 003 r1 / 004 r2）。
+  - `landed`：delivery commit **b91989c**（v0.6-dev ff-only tip；rebase
+    旧→新映射 74775ab→41d37ae / 694a17b→e622c90 / 7d218d0→a195e92 /
+    a5e8c4a→f9f0b98 / fe57d26→a3cfd17 / fbcc54b→2949ff0 / 46668d4→
+    78271d3 / ad5d987→25212e1 / 1422701→b91989c，`git range-diff`
+    九提交全等）。落地树回归门：desktop_mcp 74/74 + verify_p2/p3/p4
+    33 断言（1422701 = b91989c 同树，复审会话全新跑）。
+  - `ledger_refreshed`：canonical = 本仓 SPEC.md（归仓裁定约定），
+    §1/§1.7-1.10 已含全部交付语义；无独立 ledger 结构（记录性豁免）。
+  - `archived`：docs/plans/archive/004-fm-recursive-search-favorites.md（本移动），
+    completion_kind: delivered。
+  - `cleaned`：随统一清理（wt-guard 脚本不在本机——替代扫描：366 个
+    链接全部组内、0 越组；工作树组 .wt/os-045 移除 + 分支删除见
+    001 收据尾注）。
+
 ## 待澄清事项
 
 - 无。

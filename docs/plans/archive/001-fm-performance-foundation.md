@@ -1,6 +1,6 @@
 ---
 plan_id: PLAN-001
-status: reviewed         # drafting → executing → execution_done → reviewed → archived
+status: archived         # drafting → executing → execution_done → reviewed → archived
                               # （T-01..T-07 全部完成；待 review）
 feature_name: fm-performance-foundation
 author: [agent]
@@ -436,6 +436,23 @@ model 增量：
   阻断——vue=调试轨）| evidence: desktop_mcp 74/74 + verify_p2/p3/p4
   33 断言 + vue codegen/serve/DOM 实证（本会话复审全新跑）| next:
   merge（随 002/003/004 统一落地）。
+
+- 2026-10-04 stage: merge | PLAN-001 | 统一落地收据：
+  - `prepared`：reviewed @ 001 终态（001 r3 / 002 r1 / 003 r1 / 004 r2）。
+  - `landed`：delivery commit **b91989c**（v0.6-dev ff-only tip；rebase
+    旧→新映射 74775ab→41d37ae / 694a17b→e622c90 / 7d218d0→a195e92 /
+    a5e8c4a→f9f0b98 / fe57d26→a3cfd17 / fbcc54b→2949ff0 / 46668d4→
+    78271d3 / ad5d987→25212e1 / 1422701→b91989c，`git range-diff`
+    九提交全等）。落地树回归门：desktop_mcp 74/74 + verify_p2/p3/p4
+    33 断言（1422701 = b91989c 同树，复审会话全新跑）。
+  - `ledger_refreshed`：canonical = 本仓 SPEC.md（归仓裁定约定），
+    §1/§1.7-1.10 已含全部交付语义；无独立 ledger 结构（记录性豁免）。
+  - `archived`：docs/plans/archive/001-fm-performance-foundation.md（本移动），
+    completion_kind: delivered。
+  - `cleaned`：随统一清理（wt-guard 脚本不在本机——替代扫描：366 个
+    链接全部组内、0 越组；工作树组 .wt/os-045 移除 + 分支删除见
+    001 收据尾注）。
+
 ## 待澄清事项
 
 - **框架侧债（已路由，不阻塞本计划）**：MCP payload 编码触发名在
