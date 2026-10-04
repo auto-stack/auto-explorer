@@ -1,13 +1,13 @@
 ---
 plan_id: PLAN-001
-status: executing               # drafting → executing → execution_done → reviewed → archived
-                              # （T-01..T-03 完成收口；T-04..T-07 待续）
+status: execution_done         # drafting → executing → execution_done → reviewed → archived
+                              # （T-01..T-07 全部完成；待 review）
 feature_name: fm-performance-foundation
 author: [agent]
 created_at: 2026-10-04
 updated_at: 2026-10-04
 plan_revision: 2
-current_step: 3
+current_step: 7
 total_steps: 7
 
 # /auto-plan:review 结束时填写：
@@ -293,24 +293,50 @@ model 增量：
   onscroll 臂探针（无回调面则弃并注记）；thumb 窗口化排队。
   验证：desktop_mcp T16（3000）；T1-T14 回归。
   → AC-02/AC-05
+  [✅ 已完成 2026-10-04] commit 74775ab。探针 @400：view_total=400 /
+  files_view=300 行 + 哨兵标签 → GrowRender → 400 行全显、标签清空。
+  onscroll 臂按计划回落条款弃用（MCP 无可验证滚动触发通道，按钮+哨兵
+  双保险）。附带：套件幽灵端口梯加固（本机 9427 端口瞬时毒化实证：
+  日志称监听而 accept 拒连、netstat 空、~数分钟自愈——启动器现以
+  /mcp 实测可达为采用标准 ≤3 梯）。
 - **T-05** 大目录分批物化两臂裁决
   文件：app.at（build_snapshot/Tick）
   操作：fs.entries 消费探针 → 臂 A 或臂 B 落地；snapshot_progress
   状态与状态栏「元数据加载中」；补齐一次性稳定重排不变式。
   验证：desktop_mcp T18；perf_check P-1。
   → AC-02（大目录维度）
+  [✅ 已完成 2026-10-04] commit 694a17b。**两臂均否决、实测终裁**：
+  ① fs.entries 流式臂——for-in 消费 iterator_id 得 0 事件（探针）；
+  ② 记录快照臂——VM 记录创建 ~3k-10k 离散故障（3k NavTo 应用内 0ms
+  健康 / 10k handler 中止：current_path 已写快照永不落；1 万次标量
+  push=0ms 对照；read_dir+parse@10k=0ms 排除解析墙）。终裁 = **8 平行
+  标量数组快照**（零记录创建全链）+ 键预计算三平行列表归并
+  sort_indices + SNAP_CAP=8000 分层（4k/6k/8k 收敛阶梯实证；12k cap
+  生效 view_total=8000/d_real=12000/截断标注/应用内 snap+derive 0ms）。
+  附带修复：tree_icon stylekit 导入内联（deps 下载器在网络可达时以
+  gitee 克隆覆盖 vendor 固定版致 fatal-at-boot）。
 - **T-06** 测试与性能门落地
   文件：tests/mkbig.py（新）、tests/perf_check.py（新）、
   tests/desktop_mcp.py（T15-T18）
   操作：按测试设计实现；性能门容差与 waiver 机制。
   验证：全套件跑通全绿。
   → AC-01..AC-05
+  [✅ 已完成 2026-10-04] commit 7d218d0。**套件 73/73 全绿**（T1-T14
+  既有 58 + T15-T18 新增 15：T15 九连交互计数稳定+派生 ≤100ms（实测
+  0）；T17 name/size×升降精确序+目录恒先；T16 渐进渲染 @2500（首窗
+  ≤310 行/全量计数/扩窗增长/恒定）；T18 cap@9000（8000+截断标注+
+  d_real_total））。perf_check 四门 ALL PASS（应用内 0ms vs 预算
+  200-4000ms）。T14 前置复位（T15-T18 目录污染修复）。
 - **T-07** 文档同步
   文件：apps/027-file-manager/SPEC.md（§1 重写）、README.md（性能
   特性）、docs/REQUIREMENTS.md（状态列）、docs/DESIGN.md（revision 绑定）
   操作：按落地产物更新；臂裁决结论回写 DESIGN §6。
   验证：文档 diff 复查。
   → 全 AC 证据链
+  [✅ 已完成 2026-10-04] commit a5e8c4a。SPEC §1 重写（三层+平行数组+
+  cap+排序契约+计时口径）；REQUIREMENTS §3 实测口径修正；DESIGN
+  §13.5 执行内裁决回写（臂否决/记录墙/sort 终态/R4 落地）；README
+  v0.7 特性节。
 
 ## 复审记录
 
@@ -382,6 +408,17 @@ model 增量：
   - `cleaned`：**N/A 本阶段**——worktree .wt/os-045 与分支 plan-001
     有意保留续做 T-04（已同步至落地点 0fdafdb）；终态 merge 时按
     wt-guard 规程清理。
+
+- 2026-10-04 stage: work | PLAN-001 | rev 2 | outcome: **pass
+  （execution_done）** | code_commit: app 仓 plan-001 分支 74775ab →
+  694a17b → 7d218d0 → a5e8c4a（基线 7cc127d；worktree .wt/os-045
+  子模块）| task_ids: T-04 T-05 T-06 T-07 | evidence: 套件 **73/73**
+  全绿 ×2 轮；perf_check **ALL PASS**（应用内 0ms）；10k/12k/cap/
+  阶梯探针全链（fs.entries 0 事件、记录墙 3k-10k、平行数组 0ms、
+  cap 标注）| blockers: 无用户决策项——新增框架侧债两条已登记
+  （VM 记录对象规模墙 3k-10k 离散故障；deps 下载器覆盖 vendor 固定
+  依赖致 fatal-boot——网络可达时触发）| next: review（阶段 2：
+  T-04..T-07 全量）→ merge（app 仓 v0.6-dev）→ auto-os gitlink。
 
 ## 待澄清事项
 
