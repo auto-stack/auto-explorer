@@ -1,12 +1,12 @@
 ---
 plan_id: PLAN-004
-status: drafting               # drafting → executing → execution_done → reviewed → archived
+status: execution_done               # drafting → executing → execution_done → reviewed → archived
 feature_name: fm-recursive-search-favorites
 author: [agent]
 created_at: 2026-10-04
 updated_at: 2026-10-04
 plan_revision: 1
-current_step: 0
+current_step: 5
 total_steps: 7
 
 # /auto-plan:review 结束时填写：
@@ -202,6 +202,19 @@ var favs = []                    // storage fileman.favs [{path,label}]
 
 - 2026-10-04 stage: new（auto-plan-new 起草，plan_revision 1）。outcome:
   pass。next: work（前置：PLAN-001 merged）。
+
+
+- 2026-10-04 stage: work | PLAN-004 | rev 1 | outcome: **pass
+  （execution_done）** | code_commit: 46668d4 + ad5d987（分支 plan-004，
+  基线 fbcc54b 叠加）| evidence: verify_p4 **11/11**（搜索进入/命中/
+  逐词收敛/结果行跳父/退出、收藏增删/storage/视图行、file1<file2<
+  file10）；套件 **74/74**；verify_p2 12/12 + verify_p3 10/10 复跑绿
+  | 执行内裁决：① 协程搜索退役 → 同步 walk + **结果即快照**（d_*
+  复用——下游全免费）；② fs.walk 实测不含目录（文档歧义在案）；
+  ③ natural_key 缓存进快照（逐次算 8k 耗尽 Tick 预算）；④ **R9
+  发现：VM 10M 指令/handler 链硬上限**（AddrGo→NavTo 9k 目录超限
+  事务回滚——PLAN-001"记录墙"的最终解释）→ 预算拆链
+  （pending_refresh 下一拍派发）；⑤ Ctrl+F 同 002 延后。
 
 ## 待澄清事项
 

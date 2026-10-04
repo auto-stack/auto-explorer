@@ -188,7 +188,7 @@ if .preview_on {
 
 
 - 2026-10-04 stage: work | PLAN-003 | rev 1 | outcome: **pass
-  （execution_done）** | code_commit: fbcc26（分支 plan-003，基线 fe57d26
+  （execution_done）** | code_commit: fbcc54b（分支 plan-003，基线 fe57d26
   叠加）| evidence: tests/verify_p3.py **10/10**（文本头内容/图片 URI/
   目录摘要收敛/other 字段/焦点切换即时）；desktop_mcp **74/74** |
   执行内裁决：① 防抖 timer 弃（点击节奏直跑 PreviewRun，更简）；
