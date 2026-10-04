@@ -1,12 +1,12 @@
 ---
 plan_id: PLAN-003
-status: drafting               # drafting → executing → execution_done → reviewed → archived
+status: execution_done               # drafting → executing → execution_done → reviewed → archived
 feature_name: fm-preview-pane
 author: [agent]
 created_at: 2026-10-04
 updated_at: 2026-10-04
 plan_revision: 1
-current_step: 0
+current_step: 5
 total_steps: 7
 
 # /auto-plan:review 结束时填写：
@@ -185,6 +185,17 @@ if .preview_on {
 
 - 2026-10-04 stage: new（auto-plan-new 起草，plan_revision 1）。outcome:
   pass。next: work（前置：PLAN-001 merged）。
+
+
+- 2026-10-04 stage: work | PLAN-003 | rev 1 | outcome: **pass
+  （execution_done）** | code_commit: fbcc26（分支 plan-003，基线 fe57d26
+  叠加）| evidence: tests/verify_p3.py **10/10**（文本头内容/图片 URI/
+  目录摘要收敛/other 字段/焦点切换即时）；desktop_mcp **74/74** |
+  执行内裁决：① 防抖 timer 弃（点击节奏直跑 PreviewRun，更简）；
+  ② 目录摘要 = Tick 驱动 BFS 分批（spawn 闭包捕获未证不走协程——
+  世代=根路径比对）；③ 行级 tooltip 弃（mouse-area 无 title prop，
+  债册）；④ vue 文本预览走 api.at fs_text 新端点；⑤ 预览验收以
+  verify_p3.py 承载（环境病期短探针策略，同 002）。
 
 ## 待澄清事项
 
