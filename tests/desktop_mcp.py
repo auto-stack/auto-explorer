@@ -671,9 +671,9 @@ def run_suite(mcp, workdir, result):
         except RuntimeError:
             pass  # 仪器墙：handler 照跑，下方轮询收敛
         ok = False
-        for _ in range(30):
+        for _ in range(60):
             time.sleep(1.0)
-            if mcp.state_int("view_total") == 8000:
+            if mcp.state_int("view_total") == 8000 and mcp.state_int("d_real_total") == 9000:
                 ok = True
                 break
         result.check("T18 view_total=8000（cap 生效）", ok,

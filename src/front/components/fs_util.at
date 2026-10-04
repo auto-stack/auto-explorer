@@ -270,6 +270,41 @@ pub fn build_crumbs(p str) List {
 //   列表元素读取均 native 快路径（ProbeCompare/ProbePush 实证）。
 // ══════════════════════════════════════════════════════════════
 
+/// 自然排序键（PLAN-004 T-05：数字段 → 6 位定宽编码——file2 < file10；
+/// 与字典序键同构，直接用于 name 列 sort key）。
+pub fn natural_key(nm str) str {
+    var out str = ""
+    var i int = 0
+    var n int = nm.len()
+    while i < n {
+        let ch str = nm.sub(i, i + 1)
+        if ch >= "0" && ch <= "9" {
+            // 数字段收集
+            var num str = ""
+            while i < n {
+                let c2 str = nm.sub(i, i + 1)
+                if c2 >= "0" && c2 <= "9" {
+                    num = num + c2
+                    i = i + 1
+                } else {
+                    break
+                }
+            }
+            // 6 位定宽（>999999 段退化原样——文件名数字段实际不超）
+            var pad int = 6 - num.len()
+            while pad > 0 {
+                out = out + "0"
+                pad = pad - 1
+            }
+            out = out + num
+        } else {
+            out = out + ch
+            i = i + 1
+        }
+    }
+    return out
+}
+
 /// 列表含值判定（PLAN-002 多选路径键集合；窗口投影 O(sel)/行）。
 pub fn list_has(list List, v str) bool {
     var n int = list.len()
