@@ -48,7 +48,7 @@ widget App {
         NavTo(str), GoBack, GoForward, GoUp,
         SetViewMode(str), SortByName, SortBySize, SortByDate, SortByType, ToggleHidden,
         SetSearch(str), SetAddr(str), AddrGo, AddrEdit, AddrCancel, SelectItem(int), OpenItem(int), OpenSelected,
-        RefreshView,
+        RefreshView, GrowRender,
         CrumbsExpand,
         StartRename(int), SetEditName(str), CommitRename, CancelRename,
         ItemCtx(int), CtxClose, CtxOpen, CtxRename, CtxCopy, CtxCut, CtxPaste, CtxDelete, CtxSelect,
@@ -161,6 +161,9 @@ widget App {
         // 剥离 MCP fixture 仪器化开销的性能真值面（probe_perf 消费）。
         var last_derive_ms int = -1
         var last_snapshot_ms int = -1
+        // PLAN-045 T-04：扩窗状态串（模板零调用纪律——计数预计算）
+        var render_label str = ""      // "已显示 N"（窗口 < view_total 时）
+        var more_label str = ""        // "加载更多（剩余 N 项）"
 
         // 渲染视图模型（RefreshView 从快照派生；行 schema 与视图绑定一一对应）
         var files_view = [
@@ -578,6 +581,13 @@ widget App {
                                         }
                                     }
                                 }
+                                // PLAN-045 T-04：扩窗哨兵（点击/悬停自动扩一档；
+                                // 底部常驻保证可达，悬停是滚动渐进的常态路径）
+                                if .more_label != "" {
+                                    mouse-area (onclick: .GrowRender, onmouseenter: .GrowRender, style: "flex-1 h-10 px-4 items-center justify-center cursor-pointer bg-accent/20 hover:bg-accent/40") {
+                                        text .more_label { style: "text-xs text-primary font-medium" }
+                                    }
+                                }
                             } else {
                                 // 空目录占位
                                 col {
@@ -632,6 +642,12 @@ widget App {
                                         }
                                     }
                                 }
+                                // PLAN-045 T-04：网格模式扩窗哨兵（同列表）
+                                if .more_label != "" {
+                                    mouse-area (onclick: .GrowRender, onmouseenter: .GrowRender, style: "flex-1 h-10 items-center justify-center cursor-pointer rounded-xl bg-card/60 border border-border mt-4 hover:bg-accent/40") {
+                                        text .more_label { style: "text-xs text-primary font-medium" }
+                                    }
+                                }
                             } else {
                                 col {
                                     style: empty_state
@@ -660,6 +676,10 @@ widget App {
                 row {
                     style: row_gap3
                     text .item_count_str { style: "font-medium text-foreground" }
+                    if .render_label != "" {
+                        text "|" { style: "text-border" }
+                        text .render_label { style: "font-medium text-primary" }
+                    }
                     text "|" { style: "text-border" }
                     text .total_size_str { style: "font-mono" }
                 }
@@ -1170,7 +1190,21 @@ widget App {
             .has_items = (kept > 0)
             .item_count_str = kept.str() + " 个项目"
             .total_size_str = format_size(total_bytes)
+            // PLAN-045 T-04：扩窗状态串（窗口 < view_total 才示）
+            if kept > .render_cap {
+                .render_label = "已显示 " + .render_cap.str()
+                .more_label = "加载更多（剩余 " + (kept - .render_cap).str() + " 项）"
+            } else {
+                .render_label = ""
+                .more_label = ""
+            }
             .last_derive_ms = time.now_ms() - t0
+        }
+
+        // ---- PLAN-045 T-04：扩窗（+render_step 档位 → 重派生；幂等）----
+        .GrowRender -> {
+            .render_cap = .render_cap + .render_step
+            .RefreshView()
         }
 
         .GoBack -> {

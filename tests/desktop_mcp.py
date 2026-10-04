@@ -574,10 +574,24 @@ def main():
     result = TestResult()
 
     # ── Phase 1 ──
-    proc = launch(mcp_port, tmp_storage, fresh=True)
+    # PLAN-001 T-04 执行内加固：幽灵端口梯——本机实测 9427 可被「日志称
+    # 监听但 accept 拒连」的毒化态命中（connect_ex 探活与 netstat 均无
+    # 占用，curl 实测拒连；同代码 9462 正常）。选号后以 /mcp 实测可达
+    # 为采用标准，不可达换端口重拉（≤3 梯），对任意毒化端口免疫。
+    proc = None
+    for attempt in range(3):
+        proc = launch(mcp_port, tmp_storage, fresh=True)
+        if wait_for_server(mcp_url):
+            break
+        print(f"WARN: 端口 {mcp_port} MCP 不可达（attempt {attempt + 1}/3）——换端口重拉")
+        proc.kill()
+        proc.wait()
+        time.sleep(2)
+        mcp_port = pick_free_port(mcp_port + 17)
+        mcp_url = f"http://localhost:{mcp_port}/mcp"
     try:
         if not wait_for_server(mcp_url):
-            print("ERROR: MCP server 启动超时")
+            print("ERROR: MCP server 启动超时（3 梯端口均不可达）")
             sys.exit(1)
         client = McpClient(mcp_url)
         # 等待 Tick 延迟引导完成（booted 翻 true → 首次 listing 就绪）。
