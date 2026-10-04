@@ -6,7 +6,7 @@ feature_name: fm-performance-foundation
 author: [agent]
 created_at: 2026-10-04
 updated_at: 2026-10-04
-plan_revision: 1
+plan_revision: 2
 current_step: 3
 total_steps: 7
 
@@ -40,8 +40,11 @@ metadata syscall（D1），500 条硬截断（D2），解释器 O(n²) 选择排
    5000 项 ≤80ms）。
 2. 10000 项目录无截断可浏览：首屏渲染 ≤300 行，扩窗渐进，`view_total`
    恒全量（P-3）。
-3. 排序换 `sort_by` 原生比较器族（8 具名 fn，目录恒先内嵌），10000 项
-   ≤100ms（P-4）；date 列改 mtime int 序。
+3. 排序换手写归并 O(n log n)（目录恒先 rank 投影 + mtime int 序 + name
+   次级键 + 左元稳定）——**rev 2**：原生 sort_by 探针否决（app VM 会话
+   不可链，T-03 证据），单路径 .at 归并双轨同源；万级性能门随 T-06 以
+   应用内计时验收（受 read_dir/json.parse 超线性墙约束，10k 达标依赖
+   T-05 fs.entries 臂）。
 4. 大目录（>2000 项）元数据分批物化不冻结首屏（P-1：≤500 项 ≤150ms、
    ≤5000 项 ≤400ms）。
 5. 既有 T1-T14 行为用例全绿（语义不回退）；vue 轨读盘派生同构。
@@ -62,9 +65,9 @@ metadata syscall（D1），500 条硬截断（D2），解释器 O(n²) 选择排
   `Reload`（写操作后同目录重建，保选中路径）、`RefreshView`（唯一派生
   入口）、`GrowRender`（扩窗）；`SortBy*/ToggleHidden/SetSearch` 改为
   纯配置变更 + RefreshView。
-- **排序**：fs_util `sort_entries(list, col, dir)` 分发 8 具名比较器
-  `cmp_{name,size,date,type}_{asc,desc}` → 原生 `sort_by`；比较器内
-  rank 投影目录恒先（desc 不反转 rank）；mtime<0（未就绪/失败）沉底。
+- **排序**：fs_util `sort_entries(list, col, dir)` = 底步向上归并排序
+  （**rev 2**：原生 sort_by 臂探针否决留证）；目录恒先 rank 投影
+  （desc 不反转）；mtime<0（未就绪/失败）沉底；name 次级键；左元稳定。
 - **扩窗三层**：尾部「加载更多 (N)」按钮（保底）→ 底部哨兵行
   onmouseenter 自动扩一档 → `scroll.onscroll` progress_y>0.92 扩窗
   （验证臂，VM 无回调面则弃）。
@@ -141,8 +144,10 @@ model 增量：
 
 ### fs_util 排序族
 
-- 删除 `sort_files`（选择排序），新增 `sort_entries` + 8 具名比较器；
-  比较器零捕获（模块级 pub fn），规避闭包捕获未证面（R1）。
+- 删除 `sort_files`（选择排序），新增 `sort_entries` 归并排序
+  （**rev 2**：sort_by 具名比较器族方案探针否决——`Undefined symbol:
+  sort.sort_by in module App`，app 会话不链 stdlib auto.sort；比较逻辑
+  内联归并唯一比较点，规避闭包捕获未证面 R1）。
 - date 比较：`a.mtime`（int）直比；显示层 fmt_date 不变。
 - `name_key`：快照构建时 `name.lower()` 预计算（过滤 contains 与 048
   搜索共用；本轮排序仍字典序——自然排序在 048）。
@@ -180,7 +185,7 @@ model 增量：
 |----------|-------------------|----------------------|-------------------|-----------|----------------|
 | SD-0011 | add | docs/specs/apps/file-manager.md | 新建 app spec：三层分离架构（快照/派生/渲染）契约——NavTo 建快照一次、RefreshView 唯一派生入口、交互 handler 零触盘 | D1 债的结构性消除 | AC-01/AC-05 |
 | SD-0012 | add | 同上 | 渐进渲染契约：render_cap 窗口 + 三层扩窗 + view_total 全量统计与渲染解耦 | D2 债消除 | AC-02/AC-05 |
-| SD-0013 | add | 同上 | 排序契约：sort_entries + 8 具名比较器（目录恒先 rank 投影、mtime int 序、name_key 预小写） | D3 债消除 + 原生排序接入 | AC-03 |
+| SD-0013 | add | 同上 | 排序契约：sort_entries 归并排序（目录恒先 rank 投影、mtime int 序、name 次级键、左元稳定；单路径双轨同源——原生 sort_by 不可达留证） | D3 债消除 | AC-03 |
 | （app 仓侧） | modify | apps/027-file-manager/SPEC.md §1 | 数据层节按 DESIGN §2-§6 重写 | 同步 | 全部 |
 
 ## 测试设计
@@ -208,8 +213,11 @@ model 增量：
 - **AC-02** 万级渐进渲染：10000 项目录（mkbig）无「已截断」态，首屏
   vtree ≤310 行，三次扩窗后可见 1800 行，`view_total`=10000 恒定。
   验证：desktop_mcp T16（n=10000 变体）。
-- **AC-03** 原生排序：四列×双向排序结果与期望序完全一致（testdata
-  golden）；10000 项排序计时 ≤100ms（perf_check P-4 门）。
+- **AC-03** 排序正确性与复杂度（rev 2 口径）：四列×双向排序结果与
+  期望序完全一致（目录恒先 + 同值 name 次级键 + 左元稳定）；算法
+  O(n log n) 归并（原生 sort_by 否决留证）；万级计时门（P-4）随 T-06
+  应用内计时版验收，且 10k 可测性依赖 T-05 落地（read_dir/json.parse
+  超线性墙——200-300 项实测 <1ms）。
 - **AC-04** 回归不破：desktop_mcp T1-T14 全绿；vue 轨 Playwright smoke
   全绿。
 - **AC-05** 统计与窗口解耦：3000 项目录首屏（300 行窗口）状态栏即示
@@ -259,9 +267,8 @@ model 增量：
   需重启 auto run 才重生成）。VM 套件复跑 58/58 绿。
 - **T-03** fs_util 排序族替换
   文件：apps/027-file-manager/src/front/components/fs_util.at
-  操作：首步探针（临时 handler sort_by(fn 引用) 形态验证，desktop_mcp
-  断言）；成立则 8 具名比较器 + sort_entries 落地、删 sort_files；
-  失败则手写归并回落 + 债册登记。date 列 mtime int 序接线。
+  操作：sort_by 传递面探针（fn 引用/闭包捕获）→ 裁决实现形态；date
+  列 mtime int 序接线。（rev 2 记：探针否决，落手写归并。）
   验证：desktop_mcp T17；perf_check P-4。
   → AC-03
   [✅ 已完成 2026-10-04] commit a3bc525。**探针结论改变实现形态**：原生
@@ -322,6 +329,41 @@ model 增量：
   预检不剥、vue 整除减法不截断、vue dev 监听停摆、sort natives 不入
   app 会话；均 auto-lang 自仓计划范畴）| next: T-04 渐进渲染扩窗
   （→ T-05 fs.entries 臂裁决 → T-06 应用内计时版性能门 → T-07 文档）。
+
+- 2026-10-04 stage: review | PLAN-001 | rev 2（复审内契约修正：
+  AC-03/目标/架构/SD-0013 由「原生 sort_by 比较器族」改为「手写归并」
+  ——探针否决证据 T-03 在档；P 系指标验收口径统一为应用内计时）|
+  outcome: **pass（阶段 1：T-01..T-03）**——整体计划保持 executing，
+  不授予 reviewed 终态 | reviewed_commit: a3bc525（worktree .wt/os-045
+  子模块 plan-045 分支；树净，仅 untracked .auto/ 运行态目录）|
+  base_commit: be44391 | dependency_revisions: auto.exe = auto-lang
+  master@168b56923 debug 构建（2026-10-04 03:03）| spec_inputs:
+  REQUIREMENTS.md/DESIGN.md @ 666b2e9（计划归仓重编号同提交）；SPEC.md
+  未动（T-07 待办，规范增量 SD-0011..0013 维持 provisional）|
+  acceptance_results: AC-01 partial（零触盘不变式代码事实核对成立——
+  RefreshView 体内 fs./file. 调用行数=0、4 个排序 handler 尾调用全部
+  RefreshView；应用内计时 200-300 项 <1ms；正式 T15 断言与 P-2 门待
+  T-06）；AC-02 open（T-04/T-05 未做；10k 受 read_dir/json.parse 超线
+  性墙）；AC-03 pass（正确性全维：套件 T11 + 引导序 + probe row0=
+  dir-00000 目录恒先 + vue 渲染序；万级计时门待 T-06 且依赖 T-05）；
+  AC-04 partial（VM 套件 58/58 本复审会话全新复现；vue Playwright
+  smoke 未建——以浏览器会话实证替代留档，正式 smoke 待 T-06）；
+  AC-05 partial（解耦代码事实成立——统计恒全量、渲染恒窗口切片；
+  T16 断言待 T-06）；AC-06 partial（vue 派生路径浏览器实证；parity
+  对拍待 T-06）| findings: F-1 契约偏差 AC-03 原生措辞（已修——本
+  rev 2）；F-2 性能验收口径须应用内计时（已修——rev 2 注记，MCP 墙钟
+  ~3s @200 行模型为纯仪器噪声，probe_perf 在档）；F-3 开放项 T-04..
+  T-07（阶段落地授权，本裁决不覆盖）；F-4 .auto/ 运行态目录 untracked
+  （非实现物，忽略）；F-5 REQUIREMENTS P-x 数字重标定（T-07/review
+  终态时执行，已预告）| evidence: 复审会话复现——desktop_mcp 58/58
+  （a3bc525 全新跑）；代码事实核对三条零命中（RefreshView 体内
+  fs./file.、sort_by/sort_files 代码残留、无守卫 image.thumb）；
+  probe_perf.py@tests（同提交在档：in-app snapshot/derive 计时 +
+  10k 钉死定位 + 顺序抽样）；probe_trigger.py@tests（框架回归 A-E
+  矩阵）| 独立性声明：与实现同会话，结论自工件重建（测试/探针重跑 +
+  代码核对），不采信执行者自述 | next: merge（阶段 1 落地：plan-045
+  分支改名 plan-001 → 合入本仓 v0.6-dev → auto-os gitlink 回写）；
+  随后 work 继续 T-04。
 
 ## 待澄清事项
 
