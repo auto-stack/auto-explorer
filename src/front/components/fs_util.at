@@ -270,6 +270,19 @@ pub fn build_crumbs(p str) List {
 //   列表元素读取均 native 快路径（ProbeCompare/ProbePush 实证）。
 // ══════════════════════════════════════════════════════════════
 
+/// 列表含值判定（PLAN-002 多选路径键集合；窗口投影 O(sel)/行）。
+pub fn list_has(list List, v str) bool {
+    var n int = list.len()
+    var i int = 0
+    while i < n {
+        if list[i] == v {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
 /// int → 10 位零填充字符串（size/mtime 键编码；int 上限 10 位）。
 pub fn pad10(n int) str {
     var s str = n.str()

@@ -17,7 +17,7 @@
 //   排序→统计→render_cap 窗口物化，零触盘）；排序/隐藏/搜索交互不再
 //   重读盘。设计见 docs/DESIGN.md §2-§6。
 
-use components.fs_util: format_size, type_label, hidden_name, fmt_date, app_for_ext, is_image_ext, parent_of, base_name, ext_of, build_crumbs, sort_indices, pad10
+use components.fs_util: format_size, type_label, hidden_name, fmt_date, app_for_ext, is_image_ext, parent_of, base_name, ext_of, build_crumbs, sort_indices, pad10, list_has
 use back.api: fs_list, fs_home, fs_drives
 use auto.process
 use auto.fs
@@ -42,6 +42,17 @@ widget App {
     // PLAN-016 R4-T21：选中项 Enter 打开（键盘面；handler 内弹层守卫）
     actions {
         action (id: "list.open_selected", handler: .OpenSelected, title: "打开选中项", shortcut: "Enter")
+        // PLAN-002 T-03：键盘操作面（输入态守卫内联在各 handler 首行）
+        action (id: "nav.up_level", handler: .GoUp, title: "上一级", shortcut: "Backspace")
+        action (id: "nav.back", handler: .GoBack, title: "后退", shortcut: "Alt+Left")
+        action (id: "nav.forward", handler: .GoForward, title: "前进", shortcut: "Alt+Right")
+        action (id: "file.rename", handler: .StartRenameSelected, title: "重命名", shortcut: "F2")
+        action (id: "file.delete", handler: .DeleteSel, title: "删除", shortcut: "Delete")
+        action (id: "edit.copy", handler: .CopySel, title: "复制选中项", shortcut: "Ctrl+C")
+        action (id: "edit.cut", handler: .CutSel, title: "剪切选中项", shortcut: "Ctrl+X")
+        action (id: "edit.paste", handler: .PasteInto, title: "粘贴到当前目录", shortcut: "Ctrl+V")
+        action (id: "select.all", handler: .SelectAll, title: "全选", shortcut: "Ctrl+A")
+        action (id: "select.none_filter", handler: .ClearSelFilter, title: "清除选择/过滤", shortcut: "Escape")
     }
     msg {
         Init, Tick,
@@ -49,6 +60,13 @@ widget App {
         SetViewMode(str), SortByName, SortBySize, SortByDate, SortByType, ToggleHidden,
         SetSearch(str), SetAddr(str), AddrGo, AddrEdit, AddrCancel, SelectItem(int), OpenItem(int), OpenSelected,
         RefreshView, GrowRender,
+        // PLAN-002：多选与键盘面
+        ToggleSel(int), SelectAll, ClearSel, InvertSel, UpdateSelLabel, SelRangeRun,
+        NavUp, NavDown, NavHome, NavEnd, NavPgUp, NavPgDn, NavSelUp, NavSelDown,
+        CopySel, CutSel, PasteInto, PasteLoop, PasteOne(str), PasteFinish,
+        DeleteSel, ExecuteDeleteSel, CancelDeleteSel, StartRenameSelected, ClearSelFilter,
+        // PLAN-002：粘贴冲突三选
+        PasteConflictResolve(str), PasteConflictToggleAll, HeaderSelToggle,
         CrumbsExpand,
         StartRename(int), SetEditName(str), CommitRename, CancelRename,
         ItemCtx(int), CtxClose, CtxOpen, CtxRename, CtxCopy, CtxCut, CtxPaste, CtxDelete, CtxSelect,
@@ -177,6 +195,28 @@ widget App {
         // PLAN-045 T-04：扩窗状态串（模板零调用纪律——计数预计算）
         var render_label str = ""      // "已显示 N"（窗口 < view_total 时）
         var more_label str = ""        // "加载更多（剩余 N 项）"
+
+        // ---- PLAN-002：多选模型（路径键——id 随排序/扩窗重编漂移免疫）----
+        var sel_paths = []             // 选中路径键集合（字符串数组）
+        var sel_count int = 0          // 预计算（模板零 .len() 纪律）
+        var sel_bytes int = 0
+        var sel_label str = ""         // 状态栏串（预计算）
+        var anchor_id int = -1         // Shift 范围选择锚（显示序 id）
+
+        // ---- PLAN-002：批量粘贴队列 + 冲突三选状态机 ----
+        var paste_queue = []           // {path, name, op} ≤500（记录规模墙 3k 下安全）
+        var paste_i int = 0
+        var paste_done int = 0
+        var paste_skipped int = 0
+        var paste_renamed int = 0
+        var paste_conflict_open bool = false
+        var paste_conflict_name str = ""
+        var paste_conflict_apply_all bool = false
+        var paste_all_choice str = ""  // apply_all 生效后的记忆选择
+
+        // ---- PLAN-002：多选删除确认（分级文案）----
+        var confirm_multi_open bool = false
+        var confirm_multi_desc str = ""
 
         // 渲染视图模型（RefreshView 从快照派生；行 schema 与视图绑定一一对应）
         var files_view = [
@@ -429,7 +469,9 @@ widget App {
                 }
 
                 // ---- 右侧主要内容区（详细列表 vs 图标网格）----
-                col {
+                // PLAN-002 T-03：onkeydown 导航族挂共享内容容器（auto-term
+                // dot-modifier 先例；输入态守卫在各 handler 首行）
+                col (onkeydown.up: .NavUp, onkeydown.down: .NavDown, onkeydown.home: .NavHome, onkeydown.end: .NavEnd, onkeydown.pageup: .NavPgUp, onkeydown.pagedown: .NavPgDn, onkeydown.shift.up: .NavSelUp, onkeydown.shift.down: .NavSelDown) {
                     style: "flex-1 bg-background flex flex-col min-h-0 overflow-y-auto"
 
                     // 模式 A：详细列表视图
@@ -440,6 +482,11 @@ widget App {
                             // 列表表头（可点击排序）
                             row {
                                 style: "h-9 border-b border-border px-4 items-center bg-card/30 text-xs font-medium text-muted-foreground select-none sticky top-0 z-10"
+                                // PLAN-002 T-02：表头全选勾选框（全选⇄清空）
+                                col {
+                                    style: "w-10 shrink-0 items-center justify-center"
+                                    checkbox (checked: .sel_count > 0 && .sel_count == .d_total, onchange: .HeaderSelToggle, class: "h-4 w-4") {}
+                                }
                                 button (variant: "ghost") {
                                     onclick: .SortByName
                                     style: "w-1/3 justify-start px-2 text-xs text-foreground/80 hover:text-foreground"
@@ -509,9 +556,14 @@ widget App {
                                     for item in .files_view {
                                         // R4-4/5/6：整行 mouse-area——单击选中、双击
                                         // 打开、右键出菜单（任意位置）；名称去按钮化，
-                                        // 整行高亮
+                                        // 整行高亮。PLAN-002 T-02：行首勾选列
+                                        //（checkbox 自带 onchange，不与行 mouse-area 嵌套）。
                                         row {
                                             style: "h-11 items-center"
+                                            col {
+                                                style: "w-10 h-11 shrink-0 items-center justify-center"
+                                                checkbox (checked: item.sel, onchange: .ToggleSel(item.id), class: "h-4 w-4") {}
+                                            }
                                             mouse-area (onclick: .SelectItem(item.id), ondblclick: .OpenItem(item.id), oncontextmenu.prevent: .ItemCtx(item.id), onmouseenter: .RowHover(item.id), onmouseleave: .RowLeave, style: if item.id == .selected_id { "flex-1 h-11 px-4 items-center bg-accent border-l-2 border-primary" } else { if .hover_id == item.id { "flex-1 h-11 px-4 items-center bg-accent/30" } else { "flex-1 h-11 px-4 items-center" } }) {
                                                 row {
                                                     style: "h-11 items-center w-full"
@@ -582,6 +634,25 @@ widget App {
                                                         icon (name: "scissors", size: 14) {}
                                                         text "剪切" { style: "text-xs" }
                                                     }
+                                                    // PLAN-002 T-02：选择族菜单项
+                                                    button (variant: "ghost") {
+                                                        onclick: .SelectAll
+                                                        style: sidebar_item
+                                                        icon (name: "check-check", size: 14) {}
+                                                        text "全选（Ctrl+A）" { style: "text-xs" }
+                                                    }
+                                                    button (variant: "ghost") {
+                                                        onclick: .InvertSel
+                                                        style: sidebar_item
+                                                        icon (name: "arrow-left-right", size: 14) {}
+                                                        text "反向选择" { style: "text-xs" }
+                                                    }
+                                                    button (variant: "ghost") {
+                                                        onclick: .ClearSel
+                                                        style: sidebar_item
+                                                        icon (name: "x", size: 14) {}
+                                                        text "清除选择" { style: "text-xs" }
+                                                    }
                                                     button (variant: "ghost") {
                                                         onclick: .CtxDelete
                                                         style: "h-8 w-full justify-start px-3 text-xs text-destructive hover:bg-accent rounded-md flex items-center gap-2"
@@ -634,6 +705,7 @@ widget App {
                                         mouse-area (onclick: .SelectItem(item.id), ondblclick: .OpenItem(item.id), oncontextmenu.prevent: .ItemCtx(item.id), style: "cursor-pointer") {
                                             col {
                                                 style: if item.id == .selected_id { "h-40 bg-accent border-2 border-primary rounded-xl p-3 items-center justify-center gap-2 shadow-lg" } else { "h-40 bg-card/60 border border-border rounded-xl p-3 items-center justify-center gap-2 hover:bg-accent/40" }
+
 
                                                 // PLAN-023：图片文件 → 媒体管线缩略图
                                                 //（256px rendition，cover 裁切入卡，
@@ -695,6 +767,26 @@ widget App {
                     }
                     text "|" { style: "text-border" }
                     text .total_size_str { style: "font-mono" }
+                    // PLAN-002 T-02：多选统计 + 批量操作钮（集合非空唱现）
+                    if .sel_label != "" {
+                        text "|" { style: "text-border" }
+                        text .sel_label { style: "font-medium text-primary" }
+                        button (title: "复制选中项（Ctrl+C）") {
+                            onclick: .CopySel
+                            style: "h-6 w-6 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent flex items-center justify-center"
+                            icon (name: "copy", size: 13) {}
+                        }
+                        button (title: "剪切选中项（Ctrl+X）") {
+                            onclick: .CutSel
+                            style: "h-6 w-6 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent flex items-center justify-center"
+                            icon (name: "scissors", size: 13) {}
+                        }
+                        button (title: "删除选中项（Delete）") {
+                            onclick: .DeleteSel
+                            style: "h-6 w-6 rounded-md text-destructive hover:bg-destructive/10 flex items-center justify-center"
+                            icon (name: "trash-2", size: 13) {}
+                        }
+                    }
                 }
 
                 row {
@@ -774,6 +866,56 @@ widget App {
                     alert-dialog-footer {
                         alert-dialog-cancel "取消" { onclick: .CancelDelete }
                         alert-dialog-action "确认删除" { onclick: .ExecuteDelete }
+                    }
+                }
+            }
+
+            // 4. PLAN-002：多选删除确认（分级文案）
+            alert-dialog (open: .confirm_multi_open) {
+                alert-dialog-content {
+                    alert-dialog-header {
+                        alert-dialog-title "确认批量删除？"
+                        alert-dialog-description .confirm_multi_desc
+                    }
+                    alert-dialog-footer {
+                        alert-dialog-cancel "取消" { onclick: .CancelDeleteSel }
+                        alert-dialog-action "确认删除" { onclick: .ExecuteDeleteSel }
+                    }
+                }
+            }
+
+            // 5. PLAN-002 T-05：粘贴冲突三选（覆盖/跳过/保留两者 + 应用全部）
+            alert-dialog (open: .paste_conflict_open) {
+                alert-dialog-content {
+                    alert-dialog-header {
+                        alert-dialog-title "目标已存在同名项目"
+                        alert-dialog-description f"「${.paste_conflict_name}」在当前目录已存在。如何处理？"
+                    }
+                    col {
+                        style: "gap-2 pt-1"
+                        button (variant: "outline") {
+                            onclick: .PasteConflictResolve("overwrite")
+                            style: "w-full justify-start px-3 text-xs h-9"
+                            icon (name: "arrow-right-left", size: 14) {}
+                            text "覆盖（替换目标）" { style: "text-xs" }
+                        }
+                        button (variant: "outline") {
+                            onclick: .PasteConflictResolve("skip")
+                            style: "w-full justify-start px-3 text-xs h-9"
+                            icon (name: "skip-forward", size: 14) {}
+                            text "跳过此项" { style: "text-xs" }
+                        }
+                        button (variant: "outline") {
+                            onclick: .PasteConflictResolve("keepboth")
+                            style: "w-full justify-start px-3 text-xs h-9"
+                            icon (name: "copy-plus", size: 14) {}
+                            text "保留两者（自动重命名）" { style: "text-xs" }
+                        }
+                        row {
+                            style: "items-center gap-2 pt-1 px-3"
+                            checkbox (checked: .paste_conflict_apply_all, onchange: .PasteConflictToggleAll, class: "h-4 w-4") {}
+                            text "对剩余所有冲突应用本次选择" { style: "text-xs text-muted-foreground" }
+                        }
                     }
                 }
             }
@@ -1258,6 +1400,7 @@ widget App {
                 }
                 fv.push({
                     id: f2,
+                    sel: list_has(.sel_paths, .d_path[ix]),
                     name: .d_name[ix],
                     path: .d_path[ix],
                     is_dir: .d_isdir[ix],
@@ -1295,6 +1438,531 @@ widget App {
         .GrowRender -> {
             .render_cap = .render_cap + .render_step
             .RefreshView()
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // PLAN-002 T-02：多选模型（路径键集合 + 增量统计）
+        // ══════════════════════════════════════════════════════════════
+
+        .ToggleSel(id) -> {
+            if id >= 0 && id < .files_view.len() {
+                let p str = .files_view[id].path
+                if list_has(.sel_paths, p) {
+                    // 移除（无按索引删除——重建数组）
+                    var out = []
+                    var n int = .sel_paths.len()
+                    var i int = 0
+                    while i < n {
+                        if .sel_paths[i] != p {
+                            out.push(.sel_paths[i])
+                        }
+                        i = i + 1
+                    }
+                    .sel_paths = out
+                    .sel_count = .sel_count - 1
+                    if !.files_view[id].is_dir {
+                        .sel_bytes = .sel_bytes - .files_view[id].size
+                    }
+                } else {
+                    if .sel_count < 500 {
+                        .sel_paths.push(p)
+                        .sel_count = .sel_count + 1
+                        if !.files_view[id].is_dir {
+                            .sel_bytes = .sel_bytes + .files_view[id].size
+                        }
+                    } else {
+                        toast("选择已达上限 500 项")
+                    }
+                }
+                .UpdateSelLabel()
+                .RefreshView()
+            }
+        }
+
+        .UpdateSelLabel -> {
+            if .sel_count > 0 {
+                .sel_label = .sel_count.str() + " 项已选 · " + format_size(.sel_bytes)
+            } else {
+                .sel_label = ""
+            }
+        }
+
+        .SelectAll -> {
+            if .addr_editing || .rename_open || .new_modal_open || .confirm_del_open || .confirm_multi_open || .paste_conflict_open {
+                return
+            }
+            if .d_total <= 5000 {
+                var out = []
+                var i int = 0
+                var bytes int = 0
+                while i < .d_total {
+                    out.push(.d_path[i])
+                    if !.d_isdir[i] {
+                        bytes = bytes + .d_size[i]
+                    }
+                    i = i + 1
+                }
+                .sel_paths = out
+                .sel_count = .d_total
+                .sel_bytes = bytes
+                .UpdateSelLabel()
+                .RefreshView()
+            } else {
+                toast("目录过大（>5000 项），不支持全选")
+            }
+        }
+
+        .ClearSel -> {
+            .sel_paths = []
+            .sel_count = 0
+            .sel_bytes = 0
+            .anchor_id = -1
+            .UpdateSelLabel()
+            .RefreshView()
+        }
+
+        .ClearSelFilter -> {
+            // Esc：先清过滤，再清选择
+            if .search_q != "" {
+                .search_q = ""
+                .RefreshView()
+            } else {
+                if .sel_count > 0 {
+                    .ClearSel()
+                }
+            }
+        }
+
+        .InvertSel -> {
+            if .addr_editing || .rename_open || .new_modal_open || .confirm_del_open || .confirm_multi_open || .paste_conflict_open {
+                return
+            }
+            if .d_total <= 5000 {
+                var out = []
+                var bytes int = 0
+                var i int = 0
+                while i < .d_total {
+                    if !list_has(.sel_paths, .d_path[i]) {
+                        out.push(.d_path[i])
+                        if !.d_isdir[i] {
+                            bytes = bytes + .d_size[i]
+                        }
+                    }
+                    i = i + 1
+                }
+                .sel_paths = out
+                .sel_count = out.len()
+                .sel_bytes = bytes
+                .UpdateSelLabel()
+                .RefreshView()
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // PLAN-002 T-03：键盘导航（窗口边缘自动扩窗——键盘可达全表）
+        // ══════════════════════════════════════════════════════════════
+
+        .NavDown -> {
+            if .addr_editing || .rename_open || .new_modal_open || .confirm_del_open || .confirm_multi_open || .paste_conflict_open {
+                return
+            }
+            if .files_view.len() == 0 {
+                return
+            }
+            var nid int = .selected_id + 1
+            if nid >= .files_view.len() {
+                if .view_total > .render_cap {
+                    .GrowRender()
+                }
+                if nid >= .files_view.len() {
+                    nid = .files_view.len() - 1
+                }
+            }
+            .selected_id = nid
+            .anchor_id = nid
+            .SelectItem(nid)
+        }
+
+        .NavUp -> {
+            if .addr_editing || .rename_open || .new_modal_open || .confirm_del_open || .confirm_multi_open || .paste_conflict_open {
+                return
+            }
+            var nid int = .selected_id - 1
+            if nid < 0 {
+                nid = 0
+            }
+            .selected_id = nid
+            .anchor_id = nid
+            .SelectItem(nid)
+        }
+
+        .NavHome -> {
+            if .addr_editing || .rename_open || .new_modal_open || .confirm_del_open || .confirm_multi_open || .paste_conflict_open {
+                return
+            }
+            if .files_view.len() > 0 {
+                .selected_id = 0
+                .anchor_id = 0
+                .SelectItem(0)
+            }
+        }
+
+        .NavEnd -> {
+            if .addr_editing || .rename_open || .new_modal_open || .confirm_del_open || .confirm_multi_open || .paste_conflict_open {
+                return
+            }
+            if .files_view.len() > 0 {
+                let nid int = .files_view.len() - 1
+                .selected_id = nid
+                .anchor_id = nid
+                .SelectItem(nid)
+            }
+        }
+
+        .NavPgDn -> {
+            if .addr_editing || .rename_open || .new_modal_open || .confirm_del_open || .confirm_multi_open || .paste_conflict_open {
+                return
+            }
+            var nid int = .selected_id + 12
+            if nid >= .files_view.len() {
+                if .view_total > .render_cap {
+                    .GrowRender()
+                }
+                if nid >= .files_view.len() {
+                    nid = .files_view.len() - 1
+                }
+            }
+            .selected_id = nid
+            .anchor_id = nid
+            .SelectItem(nid)
+        }
+
+        .NavPgUp -> {
+            if .addr_editing || .rename_open || .new_modal_open || .confirm_del_open || .confirm_multi_open || .paste_conflict_open {
+                return
+            }
+            var nid int = .selected_id - 12
+            if nid < 0 {
+                nid = 0
+            }
+            .selected_id = nid
+            .anchor_id = nid
+            .SelectItem(nid)
+        }
+
+        // Shift+方向：范围扩展（anchor..当前入集）
+        .NavSelDown -> {
+            if .addr_editing || .rename_open || .new_modal_open || .confirm_del_open || .confirm_multi_open || .paste_conflict_open {
+                return
+            }
+            if .anchor_id < 0 {
+                .anchor_id = .selected_id
+            }
+            var nid int = .selected_id + 1
+            if nid >= .files_view.len() {
+                if .view_total > .render_cap {
+                    .GrowRender()
+                }
+                if nid >= .files_view.len() {
+                    nid = .files_view.len() - 1
+                }
+            }
+            .selected_id = nid
+            .SelectItem(nid)
+            .SelRangeRun()
+        }
+
+        .NavSelUp -> {
+            if .addr_editing || .rename_open || .new_modal_open || .confirm_del_open || .confirm_multi_open || .paste_conflict_open {
+                return
+            }
+            if .anchor_id < 0 {
+                .anchor_id = .selected_id
+            }
+            var nid int = .selected_id - 1
+            if nid < 0 {
+                nid = 0
+            }
+            .selected_id = nid
+            .SelectItem(nid)
+            .SelRangeRun()
+        }
+
+        // 区间入集（读 anchor_id..selected_id）
+        .SelRangeRun -> {
+            var lo int = .anchor_id
+            var hi int = .selected_id
+            if lo > hi {
+                lo = .selected_id
+                hi = .anchor_id
+            }
+            if lo < 0 {
+                lo = 0
+            }
+            if hi >= .files_view.len() {
+                hi = .files_view.len() - 1
+            }
+            var i int = lo
+            while i <= hi {
+                if !list_has(.sel_paths, .files_view[i].path) {
+                    if .sel_count < 500 {
+                        .sel_paths.push(.files_view[i].path)
+                        .sel_count = .sel_count + 1
+                        if !.files_view[i].is_dir {
+                            .sel_bytes = .sel_bytes + .files_view[i].size
+                        }
+                    }
+                }
+                i = i + 1
+            }
+            .UpdateSelLabel()
+            .RefreshView()
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // PLAN-002 T-04/T-05：批量操作 + 冲突三选（执行块内联直访——
+        // 无 let 记录绑定纪律、无多参 helper handler）
+        // ══════════════════════════════════════════════════════════════
+
+        .CopySel -> {
+            if .is_vm != "vm" {
+                toast("写操作仅在 VM 轨可用 — 请使用 auto run -r vm")
+                return
+            }
+            if .sel_count == 0 {
+                toast("未选择任何项目")
+                return
+            }
+            if .sel_count > 500 {
+                toast("选择超过 500 项上限，请收敛选择")
+                return
+            }
+            var q = []
+            var i int = 0
+            while i < .sel_paths.len() {
+                q.push({ path: .sel_paths[i], name: base_name(.sel_paths[i]), op: "copy" })
+                i = i + 1
+            }
+            .paste_queue = q
+            .clipboard_op = "copy"
+            .clipboard_label = "已复制 " + .sel_count.str() + " 项"
+            toast("已复制: " + .sel_count.str() + " 项")
+        }
+
+        .CutSel -> {
+            if .is_vm != "vm" {
+                toast("写操作仅在 VM 轨可用 — 请使用 auto run -r vm")
+                return
+            }
+            if .sel_count == 0 {
+                toast("未选择任何项目")
+                return
+            }
+            if .sel_count > 500 {
+                toast("选择超过 500 项上限，请收敛选择")
+                return
+            }
+            var q = []
+            var i int = 0
+            while i < .sel_paths.len() {
+                q.push({ path: .sel_paths[i], name: base_name(.sel_paths[i]), op: "cut" })
+                i = i + 1
+            }
+            .paste_queue = q
+            .clipboard_op = "cut"
+            .clipboard_label = "已剪切 " + .sel_count.str() + " 项"
+            toast("已剪切: " + .sel_count.str() + " 项")
+        }
+
+        .PasteInto -> {
+            if .is_vm != "vm" {
+                toast("写操作仅在 VM 轨可用 — 请使用 auto run -r vm")
+                return
+            }
+            if .paste_queue.len() == 0 {
+                toast("剪贴板为空")
+                return
+            }
+            .paste_i = 0
+            .paste_done = 0
+            .paste_skipped = 0
+            .paste_renamed = 0
+            .paste_all_choice = ""
+            .PasteLoop()
+        }
+
+        .PasteLoop -> {
+            while .paste_i < .paste_queue.len() {
+                let dst str = fs.join(.current_path, .paste_queue[.paste_i].name)
+                if !file.exists(dst) {
+                    .PasteOne("direct")
+                    .paste_i = .paste_i + 1
+                } else {
+                    if .paste_conflict_apply_all && .paste_all_choice != "" {
+                        .PasteOne(.paste_all_choice)
+                        .paste_i = .paste_i + 1
+                    } else {
+                        .paste_conflict_name = .paste_queue[.paste_i].name
+                        .paste_conflict_open = true
+                        return
+                    }
+                }
+            }
+            .PasteFinish()
+        }
+
+        // 单项执行（choice: direct/overwrite/skip/keepboth）——读队列游标
+        .PasteOne(choice) -> {
+            if choice == "skip" {
+                .paste_skipped = .paste_skipped + 1
+                return
+            }
+            let src str = .paste_queue[.paste_i].path
+            let nm str = .paste_queue[.paste_i].name
+            let op str = .paste_queue[.paste_i].op
+            var target str = fs.join(.current_path, nm)
+            if choice == "keepboth" {
+                // Windows 惯例：序号插在扩展名前（a.txt → a (2).txt）。
+                // fs.stem 原生符号不链入 app 会话（Undefined symbol 实证，
+                // sort_by 同族病）——纯字符串切除扩展名。
+                var ex str = fs.ext(nm)
+                var stem str = nm
+                var suffix str = ""
+                if ex != "" {
+                    suffix = "." + ex
+                    stem = nm.sub(0, nm.len() - ex.len() - 1)
+                }
+                var n int = 2
+                var cand str = fs.join(.current_path, stem + " (" + n.str() + ")" + suffix)
+                while file.exists(cand) && n < 100 {
+                    n = n + 1
+                    cand = fs.join(.current_path, stem + " (" + n.str() + ")" + suffix)
+                }
+                target = cand
+                .paste_renamed = .paste_renamed + 1
+            }
+            if op == "copy" {
+                fs.copy_recursive(src, target)
+            } else {
+                fs.rename(src, target)
+            }
+            .paste_done = .paste_done + 1
+        }
+
+        // 三选模态回调（choice: overwrite/skip/keepboth）
+        .PasteConflictResolve(choice) -> {
+            .paste_conflict_open = false
+            if .paste_conflict_apply_all {
+                .paste_all_choice = choice
+            }
+            .PasteOne(choice)
+            .paste_i = .paste_i + 1
+            .PasteLoop()
+        }
+
+        // 受控翻转（checkbox 无事件载荷——checked 绑状态，onchange 翻转）
+        .PasteConflictToggleAll -> {
+            .paste_conflict_apply_all = !.paste_conflict_apply_all
+        }
+
+        .PasteFinish -> {
+            var msg str = "已粘贴 " + .paste_done.str() + " 项"
+            if .paste_skipped > 0 {
+                msg = msg + "，跳过 " + .paste_skipped.str()
+            }
+            if .paste_renamed > 0 {
+                msg = msg + "，保留两者 " + .paste_renamed.str()
+            }
+            toast.success(msg)
+            if .clipboard_op == "cut" {
+                .clipboard_op = ""
+                .clipboard_label = ""
+                .paste_queue = []
+            }
+            .ClearSel()
+            .NavTo(.current_path)
+        }
+
+        .DeleteSel -> {
+            if .is_vm != "vm" {
+                toast("写操作仅在 VM 轨可用 — 请使用 auto run -r vm")
+                return
+            }
+            if .sel_count == 0 {
+                if .selected_id >= 0 && .selected_id < .files_view.len() {
+                    .ConfirmDelete(.selected_id)
+                }
+                return
+            }
+            var has_dir bool = false
+            var i int = 0
+            while i < .sel_paths.len() {
+                if file.is_dir(.sel_paths[i]) {
+                    has_dir = true
+                }
+                i = i + 1
+            }
+            if has_dir {
+                .confirm_multi_desc = "确定要永久删除 " + .sel_count.str() + " 个项目吗？其中包含文件夹，其全部内容将被递归删除。此操作不可撤销。"
+            } else {
+                .confirm_multi_desc = "确定要永久删除 " + .sel_count.str() + " 个项目吗？此操作不可撤销。"
+            }
+            .confirm_multi_open = true
+        }
+
+        .ExecuteDeleteSel -> {
+            .confirm_multi_open = false
+            if .is_vm != "vm" {
+                toast("写操作仅在 VM 轨可用 — 请使用 auto run -r vm")
+                return
+            }
+            var done int = 0
+            var failed int = 0
+            var i int = 0
+            while i < .sel_paths.len() {
+                if file.is_dir(.sel_paths[i]) {
+                    file.remove_dir_all(.sel_paths[i])
+                } else {
+                    file.delete(.sel_paths[i])
+                }
+                if !file.exists(.sel_paths[i]) {
+                    done = done + 1
+                } else {
+                    failed = failed + 1
+                }
+                i = i + 1
+            }
+            var msg str = "已删除 " + done.str() + " 项"
+            if failed > 0 {
+                msg = msg + "，失败 " + failed.str() + " 项"
+                toast.error(msg)
+            } else {
+                toast.success(msg)
+            }
+            .ClearSel()
+            .NavTo(.current_path)
+        }
+
+        .CancelDeleteSel -> {
+            .confirm_multi_open = false
+        }
+
+        // 表头全选勾选框（全选 ⇄ 清空）
+        .HeaderSelToggle -> {
+            if .sel_count > 0 && .sel_count == .d_total {
+                .ClearSel()
+            } else {
+                .SelectAll()
+            }
+        }
+
+        .StartRenameSelected -> {
+            if .addr_editing || .rename_open || .new_modal_open || .confirm_del_open || .confirm_multi_open || .paste_conflict_open {
+                return
+            }
+            if .selected_id >= 0 && .selected_id < .files_view.len() {
+                .StartRename(.selected_id)
+            }
         }
 
         .GoBack -> {
@@ -1699,18 +2367,21 @@ widget App {
                     is_dir_target = r.is_dir
                 }
                 if is_dir_target {
-                    // D-4：非空目录拒绝（stdlib 无递归删除；walk 逆序删除有
-                    // 误删风险，v1 不做）。
-                    // 2026-09-15(F-8)：空判改 read_dir 原串 != "[]"——
-                    // json.parse("[]").len() 实测返回 20（应为 0，VM json/len
-                    // 语义缺陷，desktop_mcp 套件实证）导致空目录恒被误判
-                    // 非空、D-4 删除永不可达。
+                    // PLAN-002 T-01：递归删除（File.remove_dir_all ffi 已注册）；
+                    // 项数分级文案；F-8：计数用 for-in（parse 结果禁 .len()）。
+                    var kids int = 0
                     var kids_src str = fs.read_dir(del_path)
                     if kids_src != "[]" {
-                        toast.error("目录非空，仅支持删除空目录: " + del_name)
-                    } else {
+                        for k in json.parse(kids_src) {
+                            kids = kids + 1
+                        }
+                    }
+                    if kids == 0 {
                         file.remove_dir(del_path)
-                        toast.success("已删除: " + del_name)
+                        toast.success("已删除空文件夹: " + del_name)
+                    } else {
+                        file.remove_dir_all(del_path)
+                        toast.success("已删除文件夹（含 " + kids.str() + " 项）: " + del_name)
                     }
                 } else {
                     file.delete(del_path)
