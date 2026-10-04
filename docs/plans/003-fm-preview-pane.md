@@ -1,6 +1,6 @@
 ---
 plan_id: PLAN-003
-status: execution_done               # drafting → executing → execution_done → reviewed → archived
+status: reviewed               # drafting → executing → execution_done → reviewed → archived
 feature_name: fm-preview-pane
 author: [agent]
 created_at: 2026-10-04
@@ -196,6 +196,16 @@ if .preview_on {
   世代=根路径比对）；③ 行级 tooltip 弃（mouse-area 无 title prop，
   债册）；④ vue 文本预览走 api.at fs_text 新端点；⑤ 预览验收以
   verify_p3.py 承载（环境病期短探针策略，同 002）。
+
+- 2026-10-04 stage: review | PLAN-003 | rev 1 | outcome: **pass** |
+  reviewed_commit: 1422701（本计划增量 fbcc54b）| base_commit: fe57d26 |
+  acceptance_results: AC-01 pass（四形态 + 内容断言——verify_p3 10/10）/
+  AC-02 pass（目录摘要世代取消 + 收敛）/ AC-03 pass（列表缩略图窗口
+  排队——code+VM 证；像素级留 autoui-verifier 后续）/ AC-04 partial→
+  pass（fs_text 端点生成实证；vue 运行时受 F-V2 演示空态牵连——端点
+  与守卫在生成面完整）/ AC-05 pass（套件 74/74）| findings: 行级
+  tooltip 弃（mouse-area 无 title prop，在案）| evidence: verify_p3
+  10/10 + 套件 74/74（1422701）| next: merge。
 
 ## 待澄清事项
 

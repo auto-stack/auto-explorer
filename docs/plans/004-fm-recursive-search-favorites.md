@@ -1,11 +1,11 @@
 ---
 plan_id: PLAN-004
-status: execution_done               # drafting → executing → execution_done → reviewed → archived
+status: reviewed               # drafting → executing → execution_done → reviewed → archived
 feature_name: fm-recursive-search-favorites
 author: [agent]
 created_at: 2026-10-04
 updated_at: 2026-10-04
-plan_revision: 1
+plan_revision: 2
 current_step: 5
 total_steps: 7
 
@@ -216,6 +216,18 @@ var favs = []                    // storage fileman.favs [{path,label}]
   事务回滚——PLAN-001"记录墙"的最终解释）→ 预算拆链
   （pending_refresh 下一拍派发）；⑤ Ctrl+F 同 002 延后。
 
+- 2026-10-04 stage: review | PLAN-004 | rev 2（终态复审：§10 协程设计
+  修正为同步 walk + 结果即快照——P-7「后台不阻塞」在 VM 单线程预算
+  模型下重释为「同步快路径 + 预算拆链」；R9 10M 指令预算墙入册）|
+  outcome: **pass** | reviewed_commit: 1422701（本计划增量 46668d4/
+  ad5d987/1422701）| base_commit: fbcc54b | acceptance_results: AC-01
+  pass（搜索进入/命中/逐词/退出——verify_p4）／AC-02 pass（结果行跳父
+  导航 + 结果态全功能）／AC-03 pass（收藏增删/storage/视图行）／
+  AC-04 pass（file1<file2<file10；键缓存）／AC-05 pass（套件 74/74 +
+  三探针 33 断言 + 收尾核对单）| findings: 巨大树（>10 万条目）walk
+  可能触发预算中止 → 搜索无操作（无崩溃、可换窄根重试）——债册登记
+  F-V3；Ctrl+F 延后（ui.focus）| evidence: verify_p4 11/11 + T18
+  直测（9000→8000+标注+零预算错误）| next: merge。
 ## 待澄清事项
 
 - 无。

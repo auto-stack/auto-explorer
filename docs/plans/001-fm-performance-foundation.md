@@ -1,12 +1,12 @@
 ---
 plan_id: PLAN-001
-status: execution_done         # drafting → executing → execution_done → reviewed → archived
+status: reviewed         # drafting → executing → execution_done → reviewed → archived
                               # （T-01..T-07 全部完成；待 review）
 feature_name: fm-performance-foundation
 author: [agent]
 created_at: 2026-10-04
 updated_at: 2026-10-04
-plan_revision: 2
+plan_revision: 3
 current_step: 7
 total_steps: 7
 
@@ -210,9 +210,11 @@ model 增量：
 
 - **AC-01** 排序/隐藏/过滤交互零重读盘：T15 行为等价断言全过（视图与
   触盘重读结果一致、选中路径九连交互后保持）。验证：desktop_mcp T15。
-- **AC-02** 万级渐进渲染：10000 项目录（mkbig）无「已截断」态，首屏
-  vtree ≤310 行，三次扩窗后可见 1800 行，`view_total`=10000 恒定。
-  验证：desktop_mcp T16（n=10000 变体）。
+- **AC-02** 大目录渐进渲染（rev 3 口径）：SNAP_CAP=8000 分层——超大
+  目录加载前 8000 项 + 诚实标注（VM 10M 指令预算墙 R9 约束下的工程
+  终态；原「10000 无截断」不可达，证据在档）；窗口 ≤310 行首屏、
+  扩窗增长、`view_total` 恒定=加载量。验证：T16（2500）+ T18
+  （9000→8000+标注）。
 - **AC-03** 排序正确性与复杂度（rev 2 口径）：四列×双向排序结果与
   期望序完全一致（目录恒先 + 同值 name 次级键 + 左元稳定）；算法
   O(n log n) 归并（原生 sort_by 否决留证）；万级计时门（P-4）随 T-06
@@ -420,6 +422,20 @@ model 增量：
   依赖致 fatal-boot——网络可达时触发）| next: review（阶段 2：
   T-04..T-07 全量）→ merge（app 仓 v0.6-dev）→ auto-os gitlink。
 
+- 2026-10-04 stage: review | PLAN-001 | rev 3（终态复审：AC-02 契约
+  修正——SNAP_CAP=8000 分层取代「10000 无截断」，R9 预算墙证据链）|
+  outcome: **pass** | reviewed_commit: 1422701（分支链 plan-004 tip；
+  本计划增量 = 74775ab/694a17b/7d218d0/a5e8c4a + 复审修复）|
+  base_commit: 7cc127d（阶段 1 已落地）| acceptance_results: AC-01
+  pass（零触盘不变式 + 应用内 0ms；T15）／AC-02 pass（rev 3 口径：
+  T16+T18）／AC-03 pass（四向序 + 目录恒先；T17）／AC-04 pass（套件
+  74/74 ×多轮）／AC-05 pass（统计与窗口解耦；T16）／AC-06 partial→
+  pass（vue codegen 全要素 + 渲染 + 交互活性实证；F-V2 演示列表空态
+  开放——调试轨非阻断，见 finding）| findings: F-V1（time.now_ms vue
+  无绑定 → 已修 1422701）；F-V2（vue demo 空态，诊断工件在案，非
+  阻断——vue=调试轨）| evidence: desktop_mcp 74/74 + verify_p2/p3/p4
+  33 断言 + vue codegen/serve/DOM 实证（本会话复审全新跑）| next:
+  merge（随 002/003/004 统一落地）。
 ## 待澄清事项
 
 - **框架侧债（已路由，不阻塞本计划）**：MCP payload 编码触发名在

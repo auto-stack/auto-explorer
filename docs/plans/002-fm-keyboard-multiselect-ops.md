@@ -260,6 +260,18 @@ DeleteSelected -> 确认模态（集合含目录 → 递归文案 + 项数）→
   = SPEC §6 MCP 失联恶化，stash 对照证 001 绿态同灭，非本计划回归）；
   ⑤ keepboth 序号插扩展名前（Windows 惯例）。
 
+- 2026-10-04 stage: review | PLAN-002 | rev 1 | outcome: **pass** |
+  reviewed_commit: 1422701（本计划增量 fe57d26）| base_commit: a5e8c4a |
+  acceptance_results: AC-01 pass（键盘面全量：导航族 + 11 actions +
+  输入态守卫——verify_p2 T20；Ctrl+F 延后有据）／AC-02 pass（多选
+  统计/范围/勾选——T19）／AC-03 pass（批量复制粘贴/删除 + 500 门 +
+  汇总——T19/T22 磁盘断言）／AC-04 pass（递归删除 3 层树 + 分级文案
+  ——T22）／AC-05 pass（冲突三选 + 保留两者 a (2).txt——T21）／
+  AC-06 pass（vue codegen 键盘/勾选要素生成 + 守卫文案在生成面）|
+  findings: 无新增（F-V1/F-V2 记于 001 终态复审——共享面）|
+  evidence: verify_p2 12/12 + 套件 74/74（1422701 全新跑）| next:
+  merge。
+
 ## 待澄清事项
 
 - 无（R5 探针失败路径已在背景节定义为升格决策，非本计划内静默回退）。
