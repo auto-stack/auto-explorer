@@ -129,8 +129,14 @@ P2 = 展望（登记不实施）。状态：已有 / 改造 / 新增。
 
 ## 3. 性能需求（量化验收）
 
-测量环境：dev 机 VM 轨（`auto run -r vm`），desktop_mcp 套件计时断言
-（MCP 往返时间戳差）+ 构造测试目录（tests/mkbig 工具：可控 N 项目录）。
+**PLAN-001 rev 2 实测口径修正（2026-10-04）**：验收一律**应用内计时**
+（`last_snapshot_ms/last_derive_ms`）——MCP fixture 墙钟在大状态上是
+~3s 级仪器噪声，不可作为门；P-3 万级受 VM 记录对象规模墙约束
+（3k-10k 离散故障，框架侧债），落地为 SNAP_CAP=8000 分层 + 诚实标注。
+实测基线：2000-6000 项快照+派生应用内 **0ms**（perf_check ALL PASS）。
+
+测量环境：dev 机 VM 轨（`auto run -r vm`），desktop_mcp 套件 +
+tests/mkbig.py + tests/perf_check.py（应用内计时门）。
 
 | # | 指标 | 目标 | 手段 |
 |---|------|------|------|

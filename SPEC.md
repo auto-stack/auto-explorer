@@ -13,23 +13,34 @@ AutoOS 桌面文件管理器（Finder / Explorer 双栏形态）。桌面事实�
 
 ---
 
-## 1. 数据层（真实文件系统，T-05/T-06）
+## 1. 数据层（PLAN-001 三层分离 + 平行标量数组快照）
 
+- **三层契约**：NavTo 每目录一次建快照（数据层）→ `RefreshView` 唯一
+  派生入口（过滤→排序→统计→窗口物化，零 syscall）→ `render_cap` 渐进
+  窗口（渲染层，T-04 哨兵扩窗）。排序/隐藏/搜索交互永不重读盘。
+- **快照 = 8 平行标量列表**（`d_name/d_path/d_isdir/d_size/d_mtime/
+  d_ext/d_type/d_hidden` + `d_total`）——B12 已证形态。**禁记录对象**：
+  VM 记录创建在 ~3k-10k 间离散故障（healthy 实证：3k 导航 0ms、10k
+  handler 中止）；1 万次标量 push = 0ms。派生串（size_str/date）窗口
+  物化期计算（只付可见行）；name 过滤回落 `name.contains`（大小写敏感，
+  v0.6 语义）。
+- **SNAP_CAP=8000**：超大目录取前 8000 项 + `item_count_str` 诚实标注
+  （"N 项（超大目录，已加载前 8000 项）"）；`d_real_total` 存真值。
+  8k-10k 离散墙为框架侧债（债册在档，PLAN-001 探针全证据链）。
+- **排序**：键预计算（目录恒先 rank int 不随 desc 反转 + pad10 定宽
+  size/mtime 键 + name 次级键）+ 三平行列表归并 `sort_indices`
+  （fs_util）；mtime<0 沉底；左元稳定。date 列 = mtime int 序。
 - 主目录：`Env.get("USERPROFILE")` → 回落 `HOME`；快捷访问 = 主目录 +
-  Desktop/Documents/Downloads/Pictures/Music（`file.exists` + `file.is_dir`
-  门控显隐；回收站为非目标，不设）。
-- 列表物化：`fs.read_dir`（JSON 文件名数组，`for-in + ""+name` 字符串物化
-  —— kanban 先例路径）→ 逐条目直连 native 三件套 `file.is_dir` /
-  `file.size` / `fs.mtime`（PLAN-016 新 native，epoch 秒，失败 = -1）。
-  **禁止 metadata JSON 字段级读取**——JsonValue 可选字段在 VM 轨产出 None
-  级联 TypeError（evidence/016/d3-vue-fs.md 实证）。
-- 容量：单目录 cap 500 条（防宿主进程卡顿），超出 `item_count_str` 标注
-  "已截断"。
-- 排序：目录恒先；marks 选择排序（025 sys_store 同款）；name/date 字符串
-  比较（date 为 "YYYY-MM-DD HH:MM" 字典序 = 时间序），size 为 int 键。
+  Desktop/Documents/Downloads/Pictures/Music（exists 门控）。
+- 列表物化：`fs.read_dir` + for-in 拷入真 List（F-8：parse 结果禁
+  len/索引）→ 逐条 native 三件套 + 8 标量 push。**禁 metadata JSON
+  字段级读取**（D-3 实证不变）。
 - 隐藏项：dot-prefix（`hidden_name`）；Windows 隐藏属性 stdlib 不可达。
-- 错误态：canonical/is_dir 门控 + toast 反馈；`fs.read_dir` 失败中止
-  handler（状态变更全部置于列目录之后，失败保留原视图）。
+- 错误态：canonical/is_dir 门控 + toast；read_dir 失败中止 handler
+  （状态变更置于列目录后，失败保留原视图）。
+- **性能口径**：验收一律应用内计时（`last_snapshot_ms/last_derive_ms`，
+  handler 内 `time.now_ms` 差值）——MCP fixture 墙钟在大状态为仪器噪声
+  （~3s 级）；实测 2000-6000 项快照+派生均 0ms（perf_check ALL PASS）。
 
 ## 1.5 地址栏与面包屑（PLAN-023）
 

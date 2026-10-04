@@ -17,6 +17,15 @@ auto run -r vm
 
 共享 StyleKit 已固定在 `vendor/stylekit`，无需相邻 auto-lang 示例目录。
 
+## v0.7 性能基座（PLAN-001，阶段交付中）
+
+快照/派生/渲染三层分离：目录切换建一次平行标量数组快照，排序/过滤/
+隐藏交互零重读盘（应用内实测 2000-6000 项派生 <1ms）；渐进渲染窗口
+（扩窗哨兵）+ 超大目录 SNAP_CAP=8000 分层标注；手写归并排序（原生
+sort_by 在 app VM 会话不可链，探针留证）。验收：`tests/desktop_mcp.py`
+（73 用例）+ `tests/perf_check.py`（应用内计时门）。详见
+`docs/REQUIREMENTS.md` / `docs/DESIGN.md` / `docs/plans/001-*`。
+
 ## 来源与组合
 
 来源提交、路径与文件 hash 见 `SOURCE-IMPORT.json`。首次导入提交保留在 `source-sync` 分支；完整 v0.5 恢复后从该基线导入差异，再与产品开发线合并。

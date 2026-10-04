@@ -300,6 +300,26 @@ fs_util 纯函数 `natcmp(a str, b str) int`（约 60 行 while 扫描，无分�
 - 构造工具：tests/mkbig.py（N 参数生成临时目录，用后清理）。
 - 双轨验证：autoui-verifier 技能 parity 对拍（新 UI 面纳入）。
 
+## 13.5 PLAN-001 执行内裁决回写（2026-10-04，rev 2 后实测修正）
+
+- **R2 裁决（否决）**：`fs.entries` 流式臂否决——for-in 消费
+  iterator_id 得 0 事件（探针实证）；iterator_id 非 .at 可迭代物。
+- **新墙登记（框架侧）**：VM **记录对象创建**在 ~3k-10k 间离散故障
+  （3k 导航 0ms 健康 / 10k handler 中止：current_path 已写、快照永不
+  落；1 万次标量 push = 0ms 对照）——§6 两臂均不可达，终裁 =
+  **平行标量数组快照**（§2 数据层改形态，B12 已证）+ SNAP_CAP=8000。
+- **§5 排序形态修正**：原生 sort_by 在 app VM 会话不可链（Undefined
+  symbol: sort.sort_by）；比较器 let 绑定记录疑深拷贝（240s/10k 症，
+  no-let 亦未根治记录墙）——终态 = 键预计算（rank int + pad10 键 +
+  name 次级键）+ 三平行列表归并 `sort_indices`。
+- **§6 两臂退役**：read_dir+parse 本身 0ms@10k（探针），墙不在解析
+  在记录；分批物化不需要（平行数组快照 0ms 级）。
+- **R1 规避确认**：全程零闭包；比较逻辑内联/键化。
+- **R4 落地**：onscroll 臂弃（MCP 无可验证触发通道），哨兵行
+  （onclick+onmouseenter）+ 加载更多按钮双保险。
+- 测量学：MCP fixture 墙钟 = 仪器噪声（~3s@200 行模型）——一切性能
+  断言走应用内计时。
+
 ## 14. 风险与验证点登记
 
 | # | 风险 | 缓解 |
