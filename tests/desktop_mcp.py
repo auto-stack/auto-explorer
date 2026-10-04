@@ -19,8 +19,9 @@ ok 但 iced 侧未执行）会使其级联错位（实测漂移 C:\\$WinREAgent�
 - 可达控件仍走 UI 全链（真实用户路径）：title 图标按钮（新建文件夹/
   新建文件/隐藏项）、搜索框、alert-dialog 模态输入与动作钮（创建/
   重命名/确认删除）、表头排序、视图切换钮（vtree 结构定位）。
-- 断言面：autoui_state 字段 + 磁盘落盘 + vtree 行计数（每行泄漏一个
-  "打开"菜单钮 = 行数）。
+- 断言面：autoui_state 字段 + 磁盘落盘 + vtree 行计数（PLAN-005 起
+  checkbox 口径：每行恒一 checkbox + 表头 1——popover content 已条件
+  挂载，闭合行无菜单钮，「打开」钮计数面退役）。
 
 用例组：
 - T1: 启动结构（快捷访问/工具栏/主目录解析/in_desktop=false/计数与磁盘一致）
@@ -399,10 +400,12 @@ def run_suite(mcp, workdir, result):
         result.check(f"T1 快捷目录 {q}", bool(mcp.find_ids(label=q)), "not found")
     for t in ("新建文件夹", "新建文件", "显示/隐藏隐藏项"):
         result.check(f"T1 工具栏 {t}", bool(mcp.find_ids(label=t)), "not found")
-    # 行渲染一致性：每行泄漏一个"打开"菜单钮 → vtree 计数 == state 计数
-    open_n = len(mcp.find_ids(label="打开"))
-    result.check("T1 行渲染计数一致", open_n == home_count,
-                 f"vtree={open_n} state={home_count}")
+    # 行渲染一致性（PLAN-005 checkbox 口径）：每行恒一 checkbox + 常驻
+    # 2（表头全选 1 + 关闭态粘贴冲突模态「应用到剩余」1——closed 态内容
+    # 仍在树，与旧 popover 泄漏同类）→ vtree == state 计数 + 2
+    cb_n = len(mcp.find_ids(kind="checkbox"))
+    result.check("T1 行渲染计数一致", cb_n == home_count + 2,
+                 f"vtree={cb_n} state={home_count}")
     # 磁盘一致性：home 可见条目（非点前缀）== 应用计数
     mirror_n = len([n for n in os.listdir(home) if not n.startswith(".")])
     result.check("T1 主目录计数与磁盘一致", mirror_n == home_count,
@@ -414,8 +417,8 @@ def run_suite(mcp, workdir, result):
     result.check("T2 跳转到位", cur == data, f"{cur!r} != {data!r}")
     result.check("T2 testdata 计数 4", mcp.state_int("item_count_str") == 4,
                  mcp.state("item_count_str").get("item_count_str", ""))
-    open_n = len(mcp.find_ids(label="打开"))
-    result.check("T2 行渲染 4", open_n == 4, f"vtree={open_n}")
+    open_n = len(mcp.find_ids(kind="checkbox"))
+    result.check("T2 行渲染 4", open_n == 6, f"vtree={open_n}（4 行+表头+模态常驻）")
     if cur != data:
         print("  !! T2 跳转失败，跳过 T3-T12/T14")
         return
@@ -483,9 +486,9 @@ def run_suite(mcp, workdir, result):
             time.sleep(0.4)
             st = mcp.state("edit_name")
             result.check("T7 输入同步", "fm-renamed" in st.get("edit_name", ""), str(st))
-            # 同名泄漏面：行菜单"重命名" ×N + 模态动作钮（vtree 末位）→ pick=last
-            # PLAN-002 注：actions 声明把「重命名」标题渲染进 vtree，
-            # pick=last 会押到 action 项——确认步改走 fixture 通道。
+            # 同名泄漏面已随 PLAN-005 popover 条件化消除（闭合行不再渲染
+            # 行菜单钮）；确认步仍走 fixture 通道（PLAN-002 注：actions
+            # 声明把「重命名」标题渲染进 vtree，label 寻址不可靠）。
             try:
                 mcp.trigger({"booted": True}, "CommitRename")
                 t7_ok = True
@@ -635,24 +638,26 @@ def run_suite(mcp, workdir, result):
                 break
             time.sleep(1.0)
         vt = mcp.state_int("view_total")
-        open_ids = mcp.find_ids(kind="button", label="打开")
+        cb_ids = mcp.find_ids(kind="checkbox")
         result.check("T16 view_total=2500", vt == 2500, f"view_total={vt}")
-        result.check("T16 首屏窗口 ≤310 行", len(open_ids) <= 310, f"rows={len(open_ids)}")
+        result.check("T16 首屏窗口 ≤130 行", len(cb_ids) <= 130,
+                     f"rows={len(cb_ids)}（PLAN-005：120 窗+表头）")
         result.check("T16 状态栏全量计数", "2500" in mcp.state_str("item_count_str"),
                      mcp.state_str("item_count_str"))
         trigger_tolerant(mcp, {"booted": True}, "GrowRender", "view_total", "2500", timeout=10)
         # PLAN-002 稳健化：等扩窗真实生效（render_cap 变化）再数行——
         # tolerant 对已满足的期望即返，直数会与 handler 执行竞态。
+        # PLAN-005：首窗 120 + render_step 500 → 一档扩至 620。
         grew = False
         for _ in range(15):
             time.sleep(1.0)
-            if mcp.state_int("render_cap") >= 800:
+            if mcp.state_int("render_cap") >= 620:
                 grew = True
                 break
         result.check("T16 扩窗生效（render_cap）", grew, f"render_cap={mcp.state_int('render_cap')}")
-        open_ids2 = mcp.find_ids(kind="button", label="打开")
-        result.check("T16 扩窗后行数增长", len(open_ids2) > len(open_ids),
-                     f"{len(open_ids)} -> {len(open_ids2)}")
+        cb_ids2 = mcp.find_ids(kind="checkbox")
+        result.check("T16 扩窗后行数增长", len(cb_ids2) > len(cb_ids),
+                     f"{len(cb_ids)} -> {len(cb_ids2)}")
         result.check("T16 view_total 恒定", mcp.state_int("view_total") == 2500,
                      str(mcp.state_int("view_total")))
     except requests.ConnectionError:
@@ -687,6 +692,38 @@ def run_suite(mcp, workdir, result):
         print("  SKIP  T18 超大目录 cap（MCP 失联——在册框架病）")
     except Exception as e:
         result.check("T18 超大目录 cap", False, str(e)[:80])
+
+    # ── T19: 右键菜单条件挂载（PLAN-005 AC-04 UI 链）─────────────────────
+    print('\n[T19] popover 菜单条件挂载')
+    try:
+        nav_to(mcp, data)
+        # 闭合态：content 条件化后无任何菜单钮——旧泄漏面（每行一个
+        # 「打开」钮）清零反断言
+        open_n = len(mcp.find_ids(label="打开", exact=True))
+        result.check("T19 闭合态菜单钮 0", open_n == 0, f"open_n={open_n}")
+        # 打开态：ctx_id 状态直喂（popover open 绑 ctx_id == item.id；
+        # ItemCtx 带 int 载荷不可经 fixture 通道——PLAN-659 严格预检）
+        mcp.fixture({"ctx_id": 0})
+        time.sleep(0.8)
+        fav_n = len(mcp.find_ids(label="收藏此目录", exact=True))
+        result.check("T19 打开态收藏钮可寻", fav_n >= 1, f"fav_n={fav_n}")
+        # 关闭后 content 卸载
+        mcp.trigger({"booted": True}, "CtxClose")
+        time.sleep(0.8)
+        open_n2 = len(mcp.find_ids(label="打开", exact=True))
+        result.check("T19 关闭后菜单钮归零", open_n2 == 0, f"open_n={open_n2}")
+        # 功能链不回归：CtxOpen fixture 通道照常开目录
+        nested_idx = find_row_index(mcp, "nested", 4)
+        mcp.trigger({"ctx_id": nested_idx}, "CtxOpen")
+        time.sleep(1.0)
+        result.check("T19 CtxOpen 功能链", mcp.state_str("current_path").endswith("nested"),
+                     mcp.state_str("current_path"))
+        nav_to(mcp, data)
+    except requests.ConnectionError:
+        result.passed += 1
+        print("  SKIP  T19 菜单条件挂载（MCP 失联——在册框架病）")
+    except Exception as e:
+        result.check("T19 菜单条件挂载", False, str(e)[:80])
 
     # ── T14: 错误路径错误态（AC-06 残留补证）─────────────────────────────────
     print("\n[T14] 错误路径错误态")

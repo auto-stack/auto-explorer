@@ -191,13 +191,18 @@ widget App {
         var d_real_total int = 0
         // 派生层：过滤后总数（≠渲染行数）
         var view_total int = 0
-        // 渲染层：渐进窗口（T-04 扩窗 UI 接线；窗口物化已在此口径下）
-        var render_cap int = 300
+        // 渲染层：渐进窗口（T-04 扩窗 UI 接线；窗口物化已在此口径下）。
+        // PLAN-005：首窗 300→120（首屏构建量 -60%，哨兵扩窗语义不变）。
+        var render_cap int = 120
         var render_step int = 500
         // PLAN-045 T-06 前哨：应用内派生计时（ms，i64→int 截断）——
         // 剥离 MCP fixture 仪器化开销的性能真值面（probe_perf 消费）。
         var last_derive_ms int = -1
         var last_snapshot_ms int = -1
+        // PLAN-005：自适应内联派发阈值——d_total ≤ 4000 时导航尾部内联
+        // RefreshView（零 Tick 延迟；预算墙实测 ~9k 链才触发，4000 内
+        // 联合链 ≥2x 余量），超大目录保留 pending_refresh 预算保险。
+        var inline_cap int = 4000
         // PLAN-045 T-04：扩窗状态串（模板零调用纪律——计数预计算）
         var render_label str = ""      // "已显示 N"（窗口 < view_total 时）
         var more_label str = ""        // "加载更多（剩余 N 项）"
@@ -695,6 +700,12 @@ widget App {
                                                         }
                                                     }
                                                     popover-content {
+                                                    // PLAN-005：菜单内容条件化——仅该行打开态
+                                                    //（ctx_id == item.id）挂载 9 钮，闭合行
+                                                    // content 空挂载（消 ~9 钮/行闭合态控件爆炸；
+                                                    // F-2「closed 态内容泄漏参与布局」面随之清零）。
+                                                    // trigger 常驻沿 popover 契约不变。
+                                                    if .ctx_id == item.id {
                                                     button (variant: "ghost") {
                                                         onclick: .CtxOpen
                                                         style: sidebar_item
@@ -749,6 +760,7 @@ widget App {
                                                         style: "h-8 w-full justify-start px-3 text-xs text-destructive hover:bg-accent rounded-md flex items-center gap-2"
                                                         icon (name: "trash-2", size: 14) {}
                                                         text "删除" { style: "text-xs" }
+                                                    }
                                                     }
                                                     }
                                                 }
@@ -1290,7 +1302,12 @@ widget App {
                 .d_total = 6
                 .d_trunc = false
                 .d_real_total = 6
-                .pending_refresh = true
+                // PLAN-005：自适应内联（演示快照 ≤4000 恒内联）
+                if .d_total <= .inline_cap {
+                    .RefreshView()
+                } else {
+                    .pending_refresh = true
+                }
                 .PreviewRun()
                 }
                 }
@@ -1471,8 +1488,18 @@ widget App {
                     .d_nkey = nkeys_l
                     .d_total = tot
                     .last_snapshot_ms = time.now_ms() - ts0
-                    .render_cap = 300
-                    .pending_refresh = true
+                    // PLAN-005：首窗 120 + 自适应内联派发（≤4000 零 Tick
+                    // 延迟直派发；>4000 保留预算拆链保险）。延迟臂置
+                    // last_snapshot_ms=-77 哨兵（RefreshView 不重写该字段
+                    // → 分臂证据单次可判；内联臂保真实 snapshot 计时，
+                    // -77 ≤ perf_check 各上限门不破门）
+                    .render_cap = 120
+                    if .d_total <= .inline_cap {
+                        .RefreshView()
+                    } else {
+                        .pending_refresh = true
+                        .last_snapshot_ms = -77
+                    }
                     .PreviewRun()
                 }
             }
@@ -1585,8 +1612,13 @@ widget App {
                         .d_hidden = hidden_l
                         .d_nkey = nkeys_l
                         .d_total = m_end
-                        .render_cap = 300
-                        .pending_refresh = true
+                        // PLAN-005：首窗 120 + 自适应内联派发（vue 轨同构）
+                        .render_cap = 120
+                        if .d_total <= .inline_cap {
+                            .RefreshView()
+                        } else {
+                            .pending_refresh = true
+                        }
                         .PreviewRun()
                     }
                 }
@@ -2330,7 +2362,7 @@ widget App {
             .search_mode = true
             .search_origin = origin
             .ClearSel()
-            .render_cap = 300
+            .render_cap = 120
             .selected_id = -1
             .selected_name = ""
             .selected_info = "未选中任何项目"
@@ -2339,7 +2371,13 @@ widget App {
             } else {
                 .search_label = "子树命中 " + hits.str() + " 项（Esc 退出）"
             }
-            .pending_refresh = true
+            // PLAN-005：自适应内联派发（搜索命中 ≤2000 恒内联；阈值口径
+            // 与导航臂同源）
+            if .d_total <= .inline_cap {
+                .RefreshView()
+            } else {
+                .pending_refresh = true
+            }
             .PreviewRun()
         }
 

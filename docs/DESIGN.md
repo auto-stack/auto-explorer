@@ -336,6 +336,29 @@ fs_util 纯函数 `natcmp(a str, b str) int`（约 60 行 while 扫描，无分�
   ——PLAN-001"记录对象墙"的最终解释；对策 = 预算拆链
   （pending_refresh 下一拍执行派发）+ 重计算缓存。
 
+### 13.7 PLAN-005 执行内裁决回写（2026-10-04）
+
+- **§1.10 自适应内联**：拆链的固定 0~250ms Tick 等待是用户实测导航卡顿
+  主因 → `d_total ≤ INLINE_CAP(4000)` 导航/搜索尾部内联 RefreshView
+  （零 Tick 延迟），>4000 保留 pending_refresh 保险（预算墙 ~9k 链，
+  4000 内 ≥2x 余量）。分臂证据 = `last_snapshot_ms` 延迟臂哨兵 -77
+  （RefreshView 不重写该字段，单次观测可判）。
+- **§14-R10（新，框架侧债）：VM 轨 handler 对新增 model 字段的写入不可
+  经 state 桥观测**——fixture 写入可见、handler 写不落（执行内隔离
+  实证：fixture 写 nav_t0=777 可读回；handler 内裸赋值与 local 中转
+  两形态均不落；老字段 handler 写恒可靠）。PLAN-005 原设计的
+  nav_t0/last_nav_ms 导航全程计时仪器因此退役——诊断仪器一律用既有
+  老字段承载。
+- **§3 popover 条件挂载**：content 内 9 钮包 `if .ctx_id == item.id`，
+  闭合行空 content——F-2「closed 态内容泄漏参与布局」面清零，闭合态
+  控件爆炸（~9 钮/行）消除；vue codegen 生成 `<template v-if>` 内层
+  条件（冒烟在档）。行计数断言面迁 checkbox 口径（每行 1 + 常驻 2：
+  表头 + 关闭态粘贴冲突模态「应用到剩余」——closed alert-dialog 内容
+  亦在树）。
+- 测试通道注记：带 int 载荷的 ItemCtx 事件不可经 fixture 触发
+  （PLAN-659 严格预检）；popover 打开态用 ctx_id 状态直喂等价驱动
+  （open 绑定态）。
+
 ## 14. 风险与验证点登记
 
 | # | 风险 | 缓解 |
@@ -348,6 +371,7 @@ fs_util 纯函数 `natcmp(a str, b str) int`（约 60 行 while 扫描，无分�
 | R6 | sel_paths contains 万级选中 O(n²) 投影 | 批量操作 cap 500 门（§7） |
 | R7 | Tick 分批物化与用户交互竞态（翻页中排序） | snapshot_progress 期间排序/过滤可用（对已齐子集），补齐后一次性稳定重排（§6 不变式） |
 | R8 | spawn 协程异常静默 | 协程内 try 面缺失（.at 无 try）——发送侧世代自弃 + 超时看门狗（Tick 计数 > N 拍无进展即标记搜索失败 toast） |
+| R10 | VM 轨 handler 写新增 model 字段经 state 桥不可见 | 诊断仪器用既有老字段承载（PLAN-005 last_snapshot_ms 哨兵范式）；框架侧债（§13.7） |
 
 ## 15. 计划映射与 SPEC 演进
 
@@ -357,6 +381,7 @@ fs_util 纯函数 `natcmp(a str, b str) int`（约 60 行 while 扫描，无分�
 | 002 键盘批量 | §7-§8、§11 | §4 文件操作扩展 + 新 §键盘面 |
 | 003 预览面板 | §9 | 新 §预览 |
 | 004 搜索收藏 | §10 | 新 §搜索与收藏 |
+| 005 交互响应 | §1.10、§3 | §1.10 自适应内联 + §3 菜单条件挂载（SD-0051..0053） |
 
 每计划 merge 时同步：app README 功能清单、REQUIREMENTS 状态列、
 本档状态行 revision 绑定。

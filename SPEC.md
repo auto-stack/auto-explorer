@@ -17,7 +17,9 @@ AutoOS 桌面文件管理器（Finder / Explorer 双栏形态）。桌面事实�
 
 - **三层契约**：NavTo 每目录一次建快照（数据层）→ `RefreshView` 唯一
   派生入口（过滤→排序→统计→窗口物化，零 syscall）→ `render_cap` 渐进
-  窗口（渲染层，T-04 哨兵扩窗）。排序/隐藏/搜索交互永不重读盘。
+  窗口（渲染层，T-04 哨兵扩窗；PLAN-005 首窗 300→120——首屏构建量
+  -60%，`render_step` 500 与 GrowRender 语义不变）。排序/隐藏/搜索交互
+  永不重读盘。
 - **快照 = 8 平行标量列表**（`d_name/d_path/d_isdir/d_size/d_mtime/
   d_ext/d_type/d_hidden` + `d_total`）——B12 已证形态。**禁记录对象**：
   VM 记录创建在 ~3k-10k 间离散故障（healthy 实证：3k 导航 0ms、10k
@@ -96,6 +98,15 @@ AutoOS 桌面文件管理器（Finder / Explorer 双栏形态）。桌面事实�
 - 对策：**预算拆链**——NavTo/RunTreeSearch 只建快照并置
   pending_refresh；Tick 下一拍独立预算执行 RefreshView；重计算
   （natural_key 等）缓存在快照数组。
+- **自适应内联（PLAN-005 / SD-0051）**：拆链的固定 0~250ms Tick 等待是
+  用户实测导航卡顿主因。`d_total ≤ INLINE_CAP(4000)` 时 NavTo/搜索尾部
+  内联 `RefreshView()`（零 Tick 延迟；预算墙实测 ~9k 链才触发，4000 内
+  联合链 ≥2x 余量），仅超大目录（>4000）保留 pending_refresh 保险。
+  分臂验收 = `last_snapshot_ms` 延迟哨兵（VM 臂延迟分支置 -77；
+  RefreshView 不重写该字段 → 单次观测可判定）。PLAN-005 执行内发现
+  （框架侧债）：VM 轨 handler 对新增 model 字段的写入不可经 state 桥
+  观测（fixture 写可见、handler 写不落）——原设计 last_nav_ms 全程
+  计时仪器因此退役。
 
 ## 2. 主题与图标（T-01/T-02）
 
@@ -134,6 +145,13 @@ AutoOS 桌面文件管理器（Finder / Explorer 双栏形态）。桌面事实�
 - 右键菜单 = 逐行锚定 popover（shell dock 菜单范式：open 按 `ctx_id ==
   item.id` 匹配，placement bottom-end/bottom-start；oncontextmenu.prevent
   触发）。
+- 菜单内容条件挂载（PLAN-005 / SD-0053）：popover-content 内 9 菜单钮
+  整体包 `if .ctx_id == item.id`——仅该行打开态挂载，闭合行 content 空
+  挂载（消 ~9 钮/行的闭合态控件爆炸，F-2「closed 态内容泄漏参与布局」
+  面随之清零）；trigger 恒常驻（popover 契约 trigger/content 子结构
+  不变）。行计数断言面从「打开」钮计数迁 **checkbox 口径**（每行恒一
+  checkbox + 常驻 2：表头全选 1 + 关闭态粘贴冲突模态 1——closed 态内容
+  仍在树，与旧 popover 泄漏同类）。
 
 ## 4. 文件操作（T-06；D-4 口径）
 

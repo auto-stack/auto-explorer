@@ -1,17 +1,17 @@
 ---
 plan_id: PLAN-005
-status: drafting               # drafting → executing → execution_done → reviewed → archived
+status: execution_done          # drafting → executing → execution_done → reviewed → archived
 feature_name: fm-interaction-responsiveness
 author: [agent]
 created_at: 2026-10-04
 updated_at: 2026-10-04
 plan_revision: 1
-current_step: 0
+current_step: 5
 total_steps: 5
 
 # /auto-plan:review 结束时填写：
 supersedes_spec_components: []
-new_spec_components: []       # 预挂 SD-0051（SPEC §1.10 修订：自适应内联）
+new_spec_components: [SD-0051, SD-0052, SD-0053]
 touched_goals: []
 
 affects: [src/front/app.at, src/front/components/fs_util.at, tests/]
@@ -93,8 +93,10 @@ pending_refresh 保险；② **首屏窗口 300 → 120**（`render_cap` 初值�
   9k 目录 10M 指令中止（001 归档收据 R9）；「打开」按钮计数 = 行数
   （套件 T1/T2/T16 断言面）——闭合 popover content 在树实证。
 - **取号**：.next-id=005，active/archive 无重号（单写者会话核对）。
-- **执行环境**：worktree 组 `.wt/os-005/auto-os`（本仓 v0.6-dev 基线
-  + submodule update --init；子模块开 plan-005 分支）。
+- **执行环境**：~~worktree 组 `.wt/os-005/auto-os`~~ **执行内调整**——
+  AGENTS.md §2.1（2026-10-04 约定，优先于旧 app worktree 示例）收编
+  app 统一在 `apps/027-file-manager` 检出（submodule）的 `v0.6-dev`
+  分支直接执行；完成后推送远端 + 更新父仓 gitlink + 切回 detached。
 
 ## 详细设计
 
@@ -190,22 +192,54 @@ popover-content 条件化（list 行）：
   nav_t0/last_nav_ms 仪器（is_vm 守卫）；Tick 消费臂保留。
   验证：verify_p5（AC-01 + AC-02 前半）。
   → AC-01/AC-02
+  [✅ 已完成 2026-10-04] 自适应内联三臂 + 搜索尾部落地；**计时仪器
+  执行内退役**——VM 轨 handler 写新增 model 字段不可经 state 桥观测
+  （fixture 写可见、handler 写不落；裸赋值与 local 中转双形态隔离
+  实证，详见 §13.7 / R10）→ 改用 `last_snapshot_ms=-77` 延迟臂哨兵
+  （旧字段 handler 写已证可靠；RefreshView 不重写该字段，分臂单次
+  可判；-77 ≤ perf_check 各上限门不破门）。验证：verify_p5 13/13
+  （AC-01 内联臂就位 + AC-02 延迟哨兵 -77）。
+  → AC-01/AC-02
 - **T-02** 首屏窗口 120
   文件：src/front/app.at（render_cap 初值 + 各臂重置点）
   验证：verify_p5 首窗口断言；T16 迁移后过。
+  → AC-03
+  [✅ 已完成 2026-10-04] render_cap 300→120（初值 + NavTo 双臂 +
+  RunTreeSearch 重置点；GrowRender 语义不变）。验证：verify_p5 AC-03
+  （首屏 checkbox ≤130，实际 122）+ 套件 T16（首屏 ≤130 + 一档扩窗
+  620 + view_total 恒 2500）。
   → AC-03
 - **T-03** popover 条件化 + 断言口径迁移
   文件：src/front/app.at（popover-content 条件包裹）；
   tests/desktop_mcp.py（T1/T2/T16 计数面迁移 + 首屏口径）
   验证：verify_p5 菜单断言 + 全套件绿。
   → AC-04
+  [✅ 已完成 2026-10-04] content 9 钮整体包 `if .ctx_id == item.id`
+  （回落方案未触发——空挂载无框架异常）；vue codegen 生成内层
+  `<template v-if>`（冒烟在档）。套件迁移：T1/T2/T16 计数面迁
+  checkbox 口径 + **T19 新增**（闭合态「打开」钮 0 / ctx_id 直喂打开
+  态「收藏此目录」可寻 / 关闭归零 / CtxOpen 功能链）。执行内校准：
+  checkbox 常驻面 = 行数 + 2（表头 1 + 关闭态粘贴冲突模态 1——closed
+  alert-dialog 内容亦在树）。验证：desktop_mcp 78/78 全绿。
+  → AC-04
 - **T-04** 全量回归电池
   操作：desktop_mcp + verify_p2/p3/p4 + vue codegen 冒烟。
   验证：全绿。
   → AC-05
+  [✅ 已完成 2026-10-04] desktop_mcp **78/78** + verify_p2 12/12 +
+  verify_p3 10/10 + verify_p4 11/11 + verify_p5 13/13；vue codegen
+  冒烟（最终树重生成）：`<template v-if="ctx_id == item.id">` 内层
+  条件 + render_cap=120 + 哨兵 -77 均生成；tsc 错误 16 = 基线同集
+  （零新增类；tsc 门基线即坏——TS2554×6/TS2304 time×4 等预存）。
+  → AC-05
 - **T-05** 文档同步
   文件：SPEC.md（SD-0051..0053）、README（响应优化注记）、
   docs/DESIGN.md（§13.6 补 P5 裁决）。
+  → 全 AC 证据链
+  [✅ 已完成 2026-10-04] SPEC §1.10（自适应内联 + 哨兵 + VM 新字段
+  债注记）/ §1 三层契约（首窗 120）/ §3（菜单条件挂载 + checkbox
+  口径）；README 全景（005 列入 + 验收计数 78/46）；DESIGN 新 §13.7
+  （四条裁决回写）+ §14 R10 + §15 映射行。
   → 全 AC 证据链
 
 ## 复审记录
@@ -214,6 +248,29 @@ popover-content 条件化（list 行）：
   诊断证据与授权齐备（用户实测反馈 + 会话内测量数据在档），无待决
   阻塞。next: work（T-01 起）。popover 空挂载为唯一框架行为验证点，
   已带回落方案（保留两钮常驻），不阻塞开工。
+
+- 2026-10-04 stage: work | PLAN-005 | rev 1 | outcome: **pass
+  （execution_done）** | code_commit: app 仓 v0.6-dev（基线 1bb51b1；
+  在 apps/027-file-manager 检出按 AGENTS.md §2.1 直接执行——计划原
+  worktree 组环境被 §2.1 约定取代，执行内调整已记录）| task_ids:
+  T-01 T-02 T-03 T-04 T-05 | evidence: desktop_mcp **78/78**（含 T19
+  新增 4 断言 + T1/T2/T16 checkbox 口径迁移）+ verify_p2 12/12 +
+  verify_p3 10/10 + verify_p4 11/11 + verify_p5 **13/13**（新建，
+  AC-01..04）+ vue codegen 冒烟（最终树：内层 template v-if /
+  render_cap 120 / 哨兵 -77 均生成；tsc 错误集与基线全等，零新增类）
+  | blockers: 无用户决策项 | 执行内发现与调整：
+  ① **VM 轨 handler 写新增 model 字段不可经 state 桥观测**（fixture
+  写可见、handler 写不落；裸赋值/local 中转双形态隔离实证）——原设
+  计 last_nav_ms 导航全程计时仪器退役，AC-01 仪器面改 `last_snapshot_ms=-77`
+  延迟臂哨兵 + last_derive_ms ≤50 预算（零 Tick 延迟语义以分臂证据
+  更直接落证，非弱化）；登记 DESIGN §14-R10 框架侧债。
+  ② checkbox 断言口径常驻面 = 行数 + 2（表头 + 关闭态粘贴冲突模态
+  ——closed alert-dialog 内容亦在树）。
+  ③ ItemCtx 带 int 载荷不可经 fixture 触发（PLAN-659 严格预检）——
+  打开态以 ctx_id 状态直喂等价驱动。
+  ④ build 副产物 deps/ 遮蔽 vendor（在册债）——已清理；`auto build`
+  tsc 门基线即坏（16 错误预存，vue=调试轨非阻断）。
+  | next: review。
 
 ## 待澄清事项
 
