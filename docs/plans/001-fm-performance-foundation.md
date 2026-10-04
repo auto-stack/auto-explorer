@@ -365,6 +365,24 @@ model 增量：
   分支改名 plan-001 → 合入本仓 v0.6-dev → auto-os gitlink 回写）；
   随后 work 继续 T-04。
 
+- 2026-10-04 PLAN-001:r2 merge receipt（**阶段 1 落地**，stage: merge，
+  outcome: pass-phase）：
+  - `prepared`：复审基线 rev 2 @ a3bc525 / base be44391；spec 增量
+    SD-0011..0013 维持 provisional——**沉积延至终态 consolidation**
+    （阶段落地不publish 规范；canonical 目标随归仓裁定=本仓 SPEC.md，
+    终态 review 时按 rev 2 措辞落档）。
+  - `landed`：delivery commit **0fdafdb**（v0.6-dev ff-only tip，无合并
+    提交）。rebase 旧→新映射：1611e0f→7fff6de / ec5510f→4dee580 /
+    a3bc525→0fdafdb，`git range-diff` 三提交全等（安全改写证明）。
+    阶段回归门：desktop_mcp **58/58 @ 0fdafdb**（worktree 同树全新跑）。
+  - `ledger_refreshed`：**deferred**（随终态 consolidation 一并——本仓
+    无 specs ledger 结构，canonical=SPEC.md，见上）。
+  - `archived`：**N/A 本阶段**——整体计划保持 executing（T-04..T-07
+    开放），终态 merge 时归档。
+  - `cleaned`：**N/A 本阶段**——worktree .wt/os-045 与分支 plan-001
+    有意保留续做 T-04（已同步至落地点 0fdafdb）；终态 merge 时按
+    wt-guard 规程清理。
+
 ## 待澄清事项
 
 - **框架侧债（已路由，不阻塞本计划）**：MCP payload 编码触发名在
