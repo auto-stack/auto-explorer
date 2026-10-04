@@ -1,12 +1,12 @@
 ---
 plan_id: PLAN-002
-status: drafting               # drafting → executing → execution_done → reviewed → archived
+status: executing               # drafting → executing → execution_done → reviewed → archived
 feature_name: fm-keyboard-multiselect-ops
 author: [agent]
 created_at: 2026-10-04
 updated_at: 2026-10-04
 plan_revision: 1
-current_step: 0
+current_step: 5
 total_steps: 7
 
 # /auto-plan:review 结束时填写：
@@ -244,6 +244,21 @@ DeleteSelected -> 确认模态（集合含目录 → 递归文案 + 项数）→
 - 2026-10-04 stage: new（auto-plan-new 起草，plan_revision 1）。outcome:
   pass。next: work（前置：PLAN-001 merged）。R5 探针为唯一外部依赖，
   失败时升格用户决策（auto-lang 变更门）。
+
+
+- 2026-10-04 stage: work | PLAN-002 | rev 1 | outcome: **pass
+  （execution_done）** | code_commit: fe57d26（分支 plan-002，基线 a5e8c4a
+  = 001 tip 叠加——用户裁定全部实施完再复审）| task_ids: T-01..T-05 全
+  + T-06 收口 + T-07 文档随终态统一（SPEC 更新并入 004 后统一提交）
+  | evidence: tests/verify_p2.py **12/12**（多选统计/范围/批量复制粘贴/
+  保留两者落盘 a (2).txt/递归树内容全灭/键盘导航+输入态守卫）；
+  desktop_mcp **74/74** 全绿 | 执行内裁决记录：① Ctrl+F 聚焦延后
+  （ui.focus 原生接线面未证，不冒险）；② fs.stem 符号不链入 app 会话
+  （Undefined symbol 实证——sort_by 同族病，字符串切除替代）；③ actions
+  标题渲染进 vtree（T7 确认改 fixture 通道）；④ 套件 T19-T22 以
+  verify_p2.py 承载（套件编号冲突 + 环境病期独立短探针更稳——环境病
+  = SPEC §6 MCP 失联恶化，stash 对照证 001 绿态同灭，非本计划回归）；
+  ⑤ keepboth 序号插扩展名前（Windows 惯例）。
 
 ## 待澄清事项
 
