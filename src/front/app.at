@@ -1598,7 +1598,12 @@ widget App {
         // 调用（image.thumb 为 __vmOnly 桩，vue 轨恒空回落）。排序/隐藏/
         // 搜索交互只改配置状态后重入本 handler。
         .RefreshView -> {
-            let t0 int = time.now_ms()
+            // vue codegen 对 auto.time 无绑定（time.now_ms → ReferenceError
+            // 致列表恒空——复审发现）——计时仅 VM 轨评估
+            var t0 int = 0
+            if .is_vm == "vm" {
+                t0 = time.now_ms()
+            }
             // ---- 过滤：平行数组扫描 → 命中下标集（标量 push 全程）----
             var total_bytes int = 0
             var idxs = []
@@ -1710,7 +1715,9 @@ widget App {
                 .render_label = ""
                 .more_label = ""
             }
-            .last_derive_ms = time.now_ms() - t0
+            if .is_vm == "vm" {
+                .last_derive_ms = time.now_ms() - t0
+            }
         }
 
         // ---- PLAN-045 T-04：扩窗（+render_step 档位 → 重派生；幂等）----
