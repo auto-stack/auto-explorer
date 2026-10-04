@@ -13,11 +13,11 @@
 //   （PLAN-016 crates 扩展；旧宿主二进制该列显示 "--"）
 // - 持久化：storage.get/set 保持视图模式、排序字段、排序方向与隐藏文件状态
 // - PLAN-045 性能基座：快照/派生/渲染三层分离——NavTo 每目录建一次
-//   dir_entries 快照（预派生字段），RefreshView 为唯一派生入口（过滤→
+//   平行数组快照，RefreshView 为唯一派生入口（过滤→
 //   排序→统计→render_cap 窗口物化，零触盘）；排序/隐藏/搜索交互不再
 //   重读盘。设计见 docs/DESIGN.md §2-§6。
 
-use components.fs_util: format_size, type_label, hidden_name, fmt_date, app_for_ext, is_image_ext, parent_of, base_name, ext_of, build_crumbs, sort_entries
+use components.fs_util: format_size, type_label, hidden_name, fmt_date, app_for_ext, is_image_ext, parent_of, base_name, ext_of, build_crumbs, sort_indices, pad10
 use back.api: fs_list, fs_home, fs_drives
 use auto.process
 use auto.fs
@@ -147,11 +147,24 @@ widget App {
         var has_items bool = false
 
         // ---- PLAN-045：三层分离状态面 ----
-        // 数据层：目录快照（全量条目；name/mtime 原始值 + 展示派生字段一次
-        // 算好——此后过滤/排序/统计零重复格式化、零 syscall）。行 schema：
-        // { name, path, is_dir, size, mtime, file_ext, size_str, type_name,
-        //   date, is_hidden, name_key }
-        var dir_entries = []
+        // 数据层：目录快照 = 平行标量数组（PLAN-001 T-05 终裁；记录创建
+        // ~3k-10k 离散故障实证——VM 记录对象规模墙，1 万次标量 push 0ms）。
+        // 全链（过滤/排序/统计）零记录创建；仅窗口物化建 ≤render_cap 记录。
+        var d_name = []
+        var d_path = []
+        var d_isdir = []
+        var d_size = []
+        var d_mtime = []
+        var d_ext = []
+        var d_type = []
+        var d_hidden = []
+        var d_total int = 0
+        // PLAN-001 T-05：快照上限分层——VM 侧 8k-10k 间存在离散故障墙
+        //（4k/6k/8k 全收敛实证，10k handler 中止：current_path 已写、快照
+        // 永不落；疑似框架侧任务配额/守卫，债册登记）。SNAP_CAP 取已证
+        // 工作档 8000（v0.6 的 500 上限 16×）；超出取前 8000 项 + 诚实标注。
+        var d_trunc bool = false
+        var d_real_total int = 0
         // 派生层：过滤后总数（≠渲染行数）
         var view_total int = 0
         // 渲染层：渐进窗口（T-04 扩窗 UI 接线；窗口物化已在此口径下）
@@ -857,17 +870,25 @@ widget App {
                 .quick.push({ path: "demo://docs", label: "文档", is_home: false })
                 .quick.push({ path: "demo://pics", label: "图片", is_home: false })
                 // PLAN-045：演示目录同样走快照 schema（mtime 占位 0/
-                // name_key 预小写）+ RefreshView 派生——排序/过滤/隐藏
-                // 在演示态与真盘态同路径可达（此前 demo 行直塞 files_view，
-                // 交互派生会清空演示列表）。
-                var demo = []
-                demo.push({ name: "Documents", path: "demo://home/Documents", is_dir: true, size: 0, mtime: 0, file_ext: "", size_str: "", type_name: "文件夹", date: "2026-09-20 10:00", is_hidden: false, name_key: "documents" })
-                demo.push({ name: "Pictures", path: "demo://home/Pictures", is_dir: true, size: 0, mtime: 0, file_ext: "", size_str: "", type_name: "文件夹", date: "2026-09-20 10:00", is_hidden: false, name_key: "pictures" })
-                demo.push({ name: "Downloads", path: "demo://home/Downloads", is_dir: true, size: 0, mtime: 0, file_ext: "", size_str: "", type_name: "文件夹", date: "2026-09-18 09:12", is_hidden: false, name_key: "downloads" })
-                demo.push({ name: "readme.md", path: "demo://home/readme.md", is_dir: false, size: 2048, mtime: 0, file_ext: "md", size_str: "2 KB", type_name: "Markdown", date: "2026-09-21 14:30", is_hidden: false, name_key: "readme.md" })
-                demo.push({ name: "report.pdf", path: "demo://home/report.pdf", is_dir: false, size: 245760, mtime: 0, file_ext: "pdf", size_str: "240 KB", type_name: "PDF", date: "2026-09-19 11:05", is_hidden: false, name_key: "report.pdf" })
-                demo.push({ name: "photo.png", path: "demo://home/photo.png", is_dir: false, size: 1048576, mtime: 0, file_ext: "png", size_str: "1 MB", type_name: "图片", date: "2026-09-17 16:44", is_hidden: false, name_key: "photo.png" })
-                .dir_entries = demo
+                var demo_names = ["Documents", "Pictures", "Downloads", "readme.md", "report.pdf", "photo.png"]
+                var demo_paths = ["demo://home/Documents", "demo://home/Pictures", "demo://home/Downloads", "demo://home/readme.md", "demo://home/report.pdf", "demo://home/photo.png"]
+                var demo_isdir = [true, true, true, false, false, false]
+                var demo_size = [0, 0, 0, 2048, 245760, 1048576]
+                var demo_mtime = [0, 0, 0, 0, 0, 0]
+                var demo_ext = ["", "", "", "md", "pdf", "png"]
+                var demo_type = ["文件夹", "文件夹", "文件夹", "Markdown", "PDF", "图片"]
+                var demo_hidden = [false, false, false, false, false, false]
+                .d_name = demo_names
+                .d_path = demo_paths
+                .d_isdir = demo_isdir
+                .d_size = demo_size
+                .d_mtime = demo_mtime
+                .d_ext = demo_ext
+                .d_type = demo_type
+                .d_hidden = demo_hidden
+                .d_total = 6
+                .d_trunc = false
+                .d_real_total = 6
                 .RefreshView()
                 }
                 }
@@ -983,13 +1004,34 @@ widget App {
                         }
                     }
 
-                    // PLAN-045：快照构建（数据层，每目录一次）——全量条目
-                    // 连同展示派生字段一次物化；过滤/排序/统计移交
-                    // RefreshView（派生层，零触盘）。
+                    // PLAN-045 快照 / PLAN-001 T-05 平行标量数组化：零记录
+                    // 创建（记录对象 ~3k-10k 离散故障实证）；派生层
+                    // （RefreshView）零触盘。
                     let ts0 int = time.now_ms()
-                    var snap = []
+                    var names_arr = []
                     for raw in names {
-                        let nm str = "" + raw
+                        names_arr.push(raw)
+                    }
+                    var real_tot int = names_arr.len()
+                    var tot int = real_tot
+                    if tot > 8000 {
+                        tot = 8000
+                        .d_trunc = true
+                    } else {
+                        .d_trunc = false
+                    }
+                    .d_real_total = real_tot
+                    var names_l = []
+                    var paths_l = []
+                    var isdirs_l = []
+                    var sizes_l = []
+                    var mtimes_l = []
+                    var exts_l = []
+                    var types_l = []
+                    var hidden_l = []
+                    var c int = 0
+                    while c < tot {
+                        let nm str = "" + names_arr[c]
                         let pp str = fs.join(can, nm)
                         // 直连 native 三件套（不走 metadata JSON——JsonValue
                         // 可选字段在 VM 轨产出 None 级联 TypeError，PLAN-016
@@ -998,21 +1040,25 @@ widget App {
                         let sz int = file.size(pp)
                         let mt int = fs.mtime(pp)
                         let ext str = fs.ext(nm)
-                        snap.push({
-                            name: nm,
-                            path: pp,
-                            is_dir: isd,
-                            size: sz,
-                            mtime: mt,
-                            file_ext: ext,
-                            size_str: format_size(sz),
-                            type_name: type_label(ext, isd),
-                            date: fmt_date(mt),
-                            is_hidden: hidden_name(nm),
-                            name_key: nm.lower()
-                        })
+                        names_l.push(nm)
+                        paths_l.push(pp)
+                        isdirs_l.push(isd)
+                        sizes_l.push(sz)
+                        mtimes_l.push(mt)
+                        exts_l.push(ext)
+                        types_l.push(type_label(ext, isd))
+                        hidden_l.push(hidden_name(nm))
+                        c = c + 1
                     }
-                    .dir_entries = snap
+                    .d_name = names_l
+                    .d_path = paths_l
+                    .d_isdir = isdirs_l
+                    .d_size = sizes_l
+                    .d_mtime = mtimes_l
+                    .d_ext = exts_l
+                    .d_type = types_l
+                    .d_hidden = hidden_l
+                    .d_total = tot
                     .last_snapshot_ms = time.now_ms() - ts0
                     .render_cap = 300
                     .RefreshView()
@@ -1081,31 +1127,49 @@ widget App {
                             }
                         }
 
-                        // PLAN-045：vue 轨快照同构（后端 DirEntry → 快照行；
-                        // 派生字段 fs_util 纯函数，name_key 预小写）——与
-                        // VM 轨共用 RefreshView（缩略图为 VM 轨媒体管线
+                        // PLAN-045 vue 快照 / PLAN-001 T-05 平行数组同构——
+                        // 与 VM 轨共用 RefreshView（缩略图为 VM 轨媒体管线
                         // 专属，__vmOnly 桩恒空 → FileIcon 回落）。
-                        var snap = []
+                        var names_l = []
+                        var paths_l = []
+                        var isdirs_l = []
+                        var sizes_l = []
+                        var mtimes_l = []
+                        var exts_l = []
+                        var types_l = []
+                        var hidden_l = []
+                        var real_tot int = res.entries.len()
+                        var m_end int = real_tot
+                        if m_end > 8000 {
+                            m_end = 8000
+                            .d_trunc = true
+                        } else {
+                            .d_trunc = false
+                        }
+                        .d_real_total = real_tot
                         var m int = 0
-                        while m < res.entries.len() {
+                        while m < m_end {
                             let en = res.entries[m]
                             let ext str = ext_of(en.name)
-                            snap.push({
-                                name: en.name,
-                                path: en.path,
-                                is_dir: en.is_dir,
-                                size: en.size,
-                                mtime: en.mtime,
-                                file_ext: ext,
-                                size_str: format_size(en.size),
-                                type_name: type_label(ext, en.is_dir),
-                                date: fmt_date(en.mtime),
-                                is_hidden: hidden_name(en.name),
-                                name_key: en.name.lower()
-                            })
+                            names_l.push(en.name)
+                            paths_l.push(en.path)
+                            isdirs_l.push(en.is_dir)
+                            sizes_l.push(en.size)
+                            mtimes_l.push(en.mtime)
+                            exts_l.push(ext)
+                            types_l.push(type_label(ext, en.is_dir))
+                            hidden_l.push(hidden_name(en.name))
                             m = m + 1
                         }
-                        .dir_entries = snap
+                        .d_name = names_l
+                        .d_path = paths_l
+                        .d_isdir = isdirs_l
+                        .d_size = sizes_l
+                        .d_mtime = mtimes_l
+                        .d_ext = exts_l
+                        .d_type = types_l
+                        .d_hidden = hidden_l
+                        .d_total = m_end
                         .render_cap = 300
                         .RefreshView()
                     }
@@ -1114,41 +1178,64 @@ widget App {
         }
 
         // ---- PLAN-045：派生层唯一入口（过滤→排序→统计→窗口物化；零触盘）----
-        // 不变式：dir_entries 是唯一事实源；本 handler 不做任何 fs.*/file.*
+        // 不变式：平行数组快照（d_*）是唯一事实源；本 handler 不做任何 fs.*/file.*
         // 调用（image.thumb 为 __vmOnly 桩，vue 轨恒空回落）。排序/隐藏/
         // 搜索交互只改配置状态后重入本 handler。
         .RefreshView -> {
             let t0 int = time.now_ms()
-            var out = []
+            // ---- 过滤：平行数组扫描 → 命中下标集（标量 push 全程）----
             var total_bytes int = 0
-            var kept int = 0
-            var n int = .dir_entries.len()
-            var ql str = .search_q.lower()
+            var idxs = []
             var i int = 0
-            while i < n {
-                let e = .dir_entries[i]
-                if .show_hidden || !e.is_hidden {
-                    let matches_q = (.search_q == "") || e.name_key.contains(ql)
-                    if matches_q {
-                        out.push(e)
-                        if !e.is_dir {
-                            total_bytes = total_bytes + e.size
+            while i < .d_total {
+                if .show_hidden || !.d_hidden[i] {
+                    if .search_q == "" || .d_name[i].contains(.search_q) {
+                        idxs.push(i)
+                        if !.d_isdir[i] {
+                            total_bytes = total_bytes + .d_size[i]
                         }
-                        kept = kept + 1
                     }
                 }
                 i = i + 1
             }
-            // 排序（目录恒先；PLAN-045 T-03：选择排序退役→手写归并
-            // O(n log n) 双轨单路径——原生 sort_by 在 app VM 会话不可链
-            // （Undefined symbol 实证）；date 列 mtime int 序，同值 name
-            // 次级键）
-            out = sort_entries(out, .sort_col, .sort_dir)
+            var kept int = idxs.len()
+
+            // ---- 排序：键预计算（rank int + 键 str）+ 三平行列表归并 ----
+            // 键编码：name 直取；size/mtime pad10 定宽；type 直取；
+            // 次级 name 键统一拼接保证同值稳定；desc 只反转键序不反转
+            // 目录恒先 rank。mtime<0（未就绪）沉底（钳到大值）。
+            var ranks = []
+            var keys = []
+            var j int = 0
+            while j < kept {
+                let ix int = idxs[j]
+                var r int = 1
+                if .d_isdir[ix] { r = 0 }
+                var k str = ""
+                if .sort_col == "name" {
+                    k = .d_name[ix]
+                }
+                if .sort_col == "size" {
+                    k = pad10(.d_size[ix]) + "|" + .d_name[ix]
+                }
+                if .sort_col == "date" {
+                    var mt int = .d_mtime[ix]
+                    if mt < 0 { mt = 2147483647 }
+                    k = pad10(mt) + "|" + .d_name[ix]
+                }
+                if .sort_col == "type" {
+                    k = .d_type[ix] + "|" + .d_name[ix]
+                }
+                ranks.push(r)
+                keys.push(k)
+                j = j + 1
+            }
+            var desc bool = (.sort_dir == "desc")
+            var sorted_idxs = sort_indices(ranks, keys, idxs, desc)
             .view_total = kept
 
-            // 窗口物化：render_cap 切片 + 排序后重编 id（R4-4：id = 显示序）
-            // + 缩略图窗口内排队（cap 120，PLAN-023 管线；扩窗后新窗口
-            // 图片补排队）
+            // ---- 窗口物化：排序后重编 id（R4-4）+ 派生串窗口期计算
+            // （size_str/date 只付可见行）+ 缩略图窗口内排队（cap 120）----
             var limit int = .render_cap
             if limit > kept {
                 limit = kept
@@ -1157,30 +1244,29 @@ widget App {
             var thumb_n int = 0
             var f2 int = 0
             while f2 < limit {
-                let r = out[f2]
+                let ix int = sorted_idxs[f2]
                 var thumb_src str = ""
                 if thumb_n < 120 {
-                    if is_image_ext(r.file_ext) {
+                    if is_image_ext(.d_ext[ix]) {
                         // SPEC §5.5 守卫纪律：image.thumb 为抛错型 __vmOnly
-                        // 桩（vue 生成器实证）——仅 VM 轨排队，vue 轨恒空
-                        // 回落 FileIcon。
+                        // 桩——仅 VM 轨排队，vue 轨恒空回落 FileIcon。
                         if .is_vm == "vm" {
-                            thumb_src = image.thumb(r.path, 256)
+                            thumb_src = image.thumb(.d_path[ix], 256)
                             thumb_n = thumb_n + 1
                         }
                     }
                 }
                 fv.push({
                     id: f2,
-                    name: r.name,
-                    path: r.path,
-                    is_dir: r.is_dir,
-                    size: r.size,
-                    size_str: r.size_str,
-                    file_ext: r.file_ext,
-                    type_name: r.type_name,
-                    date: r.date,
-                    is_hidden: r.is_hidden,
+                    name: .d_name[ix],
+                    path: .d_path[ix],
+                    is_dir: .d_isdir[ix],
+                    size: .d_size[ix],
+                    size_str: format_size(.d_size[ix]),
+                    file_ext: .d_ext[ix],
+                    type_name: .d_type[ix],
+                    date: fmt_date(.d_mtime[ix]),
+                    is_hidden: .d_hidden[ix],
                     thumb_src: thumb_src,
                     sel: false
                 })
@@ -1188,7 +1274,11 @@ widget App {
             }
             .files_view = fv
             .has_items = (kept > 0)
-            .item_count_str = kept.str() + " 个项目"
+            if .d_trunc {
+                .item_count_str = .d_real_total.str() + " 项（超大目录，已加载前 " + .d_total.str() + " 项）"
+            } else {
+                .item_count_str = kept.str() + " 个项目"
+            }
             .total_size_str = format_size(total_bytes)
             // PLAN-045 T-04：扩窗状态串（窗口 < view_total 才示）
             if kept > .render_cap {

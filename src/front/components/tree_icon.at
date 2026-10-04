@@ -9,7 +9,11 @@
 /// (folder/folder-open/file/file-text/image)+ home/wrench/layout-grid/
 /// terminal/settings/eye/book-open + PLAN-618 增 table/zap(026 对象树)。
 /// 调色板外名字渲染为空(契约文档收录)。
-use stylekit.styles: icon_base
+// PLAN-001 T-05 执行内修复：stylekit 依赖内联退役——auto run 的依赖下载器
+// 在索引可达（gitee 网络）时会克隆 deps/stylekit 覆盖 vendor 固定版且产物
+// 缺 styles.at（tree_icon 解析炸 fatal-at-boot，本会话网络恢复触发实证）。
+// 全 app 仅此一处导入；icon_base 字面量与 vendor/stylekit styles.at:28 同源。
+style icon_base = "w-4 h-4 shrink-0 text-muted-foreground"
 
 widget TreeIcon (name: str = "") {
     view {
