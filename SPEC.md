@@ -55,6 +55,48 @@ AutoOS 桌面文件管理器（Finder / Explorer 双栏形态）。桌面事实�
 - 段名截断：crumb 按钮 `max-w-[10rem] truncate`——vue 轨真省略号；VM 轨
   裁切无 "…" 字形（renderer truncate = 单行 + clip，框架既有口径）。
 
+## 1.7 键盘面与多选（PLAN-002/004）
+
+- 键盘双声明面：actions（Backspace/Alt+方向/F2/Delete/Ctrl+C/X/V/A/
+  Esc/Enter）+ 内容容器 onkeydown 导航族（↑↓/Home/End/PgUp/PgDn +
+  Shift↑↓ 范围选择）；输入态守卫内联各 handler 首行；窗口边缘自动
+  扩窗（键盘可达全表）。Ctrl+F 聚焦延后（ui.focus 接线面未证）。
+- 多选：路径键集合（sel_paths）免疫 id 重编；行勾选列 + 表头全选⇄清空
+  + 网格卡勾选；增量统计（sel_count/sel_bytes）；SelectAll(≤5000)/
+  清除/反向/锚范围；批量复制/剪切/粘贴/删除（≤500 上限 + 汇总 toast）。
+- 粘贴冲突三选模态：覆盖/跳过/保留两者（序号插扩展名前——a (2).txt）
+  + 「应用到剩余」记忆；批量删除含递归警告文案。
+- 递归删除：File.remove_dir_all（分级确认带项数；批量逐项 + 失败计数）。
+
+## 1.8 预览面板（PLAN-003）
+
+- 右侧 w-80 面板（book-open 开关，storage fileman.preview_on）；
+  选中焦点驱动（SelectItem → PreviewRun，点击节奏免防抖）。
+- 四形态：文本（read_text_range 头 8KB + 全文注脚；vue 轨走
+  api.at fs_text 端点）/ 图片（image.thumb 512 → image_surface
+  contain；vue 降级提示）/ 目录摘要（Tick BFS 每拍 ≤40 目录，世代=
+  根路径比对，看门狗拍数）/ other（元信息卡，handler 期预取）。
+- 列表行图片缩略图（16px，窗口内排队）。
+
+## 1.9 递归搜索与收藏夹（PLAN-004）
+
+- 搜索范围 chip（本目录 ↔ 子树）；子树搜索 = 同步 fs.walk（native
+  快）+ .at 过滤 + **结果即快照**（写入 d_* 平行数组——排序/扩窗/
+  多选/预览对结果免费生效）；逐词重跑；cap 2000 诚实标注；结果行
+  导航（目录直达/文件跳父）；Esc 退出回搜索根；真实导航退出结果态。
+- 收藏夹：工具栏星标 + 右键「收藏此目录」；侧栏收藏组；storage
+  0x1E/0x1F 编码持久化 + Init 解码。
+- 自然排序：natural_key（数字段 6 位定宽）**缓存在快照**（d_nkey）。
+
+## 1.10 VM 指令预算（PLAN-004 发现，架构级）
+
+- **每 handler 调用链 10M 指令硬上限**——超限中止且回滚（事务性）。
+  AddrGo→NavTo→快照+派发在 9k 目录实测超限（"3k-10k 离散墙"的最终
+  解释——PLAN-001 记录的记录对象墙实为本预算墙）。
+- 对策：**预算拆链**——NavTo/RunTreeSearch 只建快照并置
+  pending_refresh；Tick 下一拍独立预算执行 RefreshView；重计算
+  （natural_key 等）缓存在快照数组。
+
 ## 2. 主题与图标（T-01/T-02）
 
 - 全视图语义 token（bg-background/bg-card/border-border/text-foreground/
