@@ -110,3 +110,30 @@ pub fn fs_home() str {
 pub fn fs_drives() []DirEntry {
     return impl_drives()
 }
+
+// PLAN-003：文本头预览端点（vue 轨消费；VM 轨走 inline native 直读）。
+pub type TextHead = {
+    ok: bool
+    head: str
+    total: int
+}
+
+fn impl_text(path str) TextHead {
+    if path == "" {
+        return { ok: false, head: "", total: 0 }
+    }
+    let can str = fs.canonical(path)
+    if can == "" {
+        return { ok: false, head: "", total: 0 }
+    }
+    if file.is_dir(can) {
+        return { ok: false, head: "", total: 0 }
+    }
+    return { ok: true, head: file.read_text_range(can, 0, 8192), total: file.size(can) }
+}
+
+/// GET /api/fs/text?path=.. — 文本文件头 8KB（预览面板文本形态）
+#[api(method = "GET", path = "/api/fs/text")]
+pub fn fs_text(path str) TextHead {
+    return impl_text(path)
+}

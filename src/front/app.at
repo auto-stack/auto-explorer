@@ -18,7 +18,7 @@
 //   重读盘。设计见 docs/DESIGN.md §2-§6。
 
 use components.fs_util: format_size, type_label, hidden_name, fmt_date, app_for_ext, is_image_ext, parent_of, base_name, ext_of, build_crumbs, sort_indices, pad10, list_has
-use back.api: fs_list, fs_home, fs_drives
+use back.api: fs_list, fs_home, fs_drives, fs_text
 use auto.process
 use auto.fs
 use auto.file
@@ -67,6 +67,8 @@ widget App {
         DeleteSel, ExecuteDeleteSel, CancelDeleteSel, StartRenameSelected, ClearSelFilter,
         // PLAN-002：粘贴冲突三选
         PasteConflictResolve(str), PasteConflictToggleAll, HeaderSelToggle,
+        // PLAN-003：预览面板
+        PreviewToggle, PreviewRun,
         CrumbsExpand,
         StartRename(int), SetEditName(str), CommitRename, CancelRename,
         ItemCtx(int), CtxClose, CtxOpen, CtxRename, CtxCopy, CtxCut, CtxPaste, CtxDelete, CtxSelect,
@@ -218,6 +220,25 @@ widget App {
         var confirm_multi_open bool = false
         var confirm_multi_desc str = ""
 
+        // ---- PLAN-003：预览面板（选中焦点驱动；storage 持久化开关）----
+        var preview_on bool = false       // storage fileman.preview_on
+        var preview_kind str = ""         // "text"|"image"|"dir"|"other"|""
+        var preview_text str = ""
+        var preview_text_note str = ""    // "前 8KB · 全文 N B"
+        var preview_img str = ""          // thumb URI（512）
+        var preview_items int = -1        // 目录摘要（-1 = 计算中）
+        var preview_bytes int = -1
+        var preview_items_label str = ""  // 预计算（模板零调用）
+        var preview_bytes_label str = ""
+        var preview_f_name str = ""       // other 卡字段（handler 期预取）
+        var preview_f_type str = ""
+        var preview_f_size str = ""
+        var preview_f_date str = ""
+        var preview_f_path str = ""
+        var preview_dir_root str = ""     // BFS 根（世代判据：根≠焦点即弃）
+        var preview_queue = []            // BFS 待访问目录
+        var preview_stall int = 0         // 看门狗拍数
+
         // 渲染视图模型（RefreshView 从快照派生；行 schema 与视图绑定一一对应）
         var files_view = [
             {
@@ -366,6 +387,13 @@ widget App {
                             style: if .view_mode == "grid" { "h-7 w-7 rounded-md bg-accent text-foreground flex items-center justify-center shadow-sm" } else { "h-7 w-7 rounded-md text-muted-foreground hover:text-foreground flex items-center justify-center" }
                             icon (name: "layout-grid", size: 14) {}
                         }
+                    }
+
+                    // PLAN-003：预览面板开关
+                    button (title: "预览面板") {
+                        onclick: .PreviewToggle
+                        style: if .preview_on { "h-8 w-8 shrink-0 rounded-lg bg-accent text-primary border border-primary/50 flex items-center justify-center" } else { "h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent border border-border flex items-center justify-center" }
+                        icon (name: "book-open", size: 15) {}
                     }
 
                     // 隐藏文件开关（icon-only + tooltip；Phase 2 T-13）
@@ -568,10 +596,15 @@ widget App {
                                                 row {
                                                     style: "h-11 items-center w-full"
 
-                                                // 名称列（图标 + 名称）
+                                                // 名称列（图标/缩略图 + 名称）——PLAN-003：
+                                                // 图片文件窗口内已排队 thumb → 小缩略图
                                                 row {
                                                     style: "w-1/3 items-center gap-2 px-2 min-w-0"
-                                                    FileIcon (is_dir: item.is_dir, ext: item.file_ext, size: 16) {}
+                                                    if item.thumb_src != "" {
+                                                        image_surface (src: item.thumb_src, fit: "cover", style: "w-4 h-4 rounded shrink-0") {}
+                                                    } else {
+                                                        FileIcon (is_dir: item.is_dir, ext: item.file_ext, size: 16) {}
+                                                    }
                                                     text item.name { style: if item.is_hidden { "text-sm text-muted-foreground font-medium truncate" } else { "text-sm text-foreground font-medium truncate" } }
                                                 }
 
@@ -746,6 +779,90 @@ widget App {
                                         } else {
                                             text "正在加载..." { style: breadcrumb_label }
                                         }
+                                }
+                            }
+                        }
+                    }
+                }
+                // ---- PLAN-003：预览面板（w-80；选中焦点驱动）----
+                if .preview_on {
+                    col {
+                        style: "w-80 shrink-0 border-l border-border bg-card/40 overflow-y-auto"
+                        col {
+                            style: "px-4 py-3 border-b border-border"
+                            row {
+                                style: row_gap1
+                                icon (name: "book-open", size: 14) { style: dim_xs }
+                                text "预览" { style: "text-xs font-medium text-foreground" }
+                            }
+                        }
+                        if .preview_kind == "text" {
+                            col {
+                                style: "p-3 gap-2"
+                                text .preview_text_note { style: "text-[10px] text-muted-foreground font-mono" }
+                                scroll (axis: "y", style: "max-h-[440px] rounded-lg bg-background border border-border p-2") {
+                                    text .preview_text { style: "text-[11px] font-mono text-foreground/90 select-text" }
+                                }
+                            }
+                        }
+                        if .preview_kind == "image" {
+                            col {
+                                style: "p-3 gap-2 items-center"
+                                if .preview_img != "" {
+                                    image_surface (src: .preview_img, fit: "contain", style: "w-full max-h-[380px] rounded-lg border border-border") {}
+                                } else {
+                                    col {
+                                        style: "h-40 w-full items-center justify-center"
+                                        text "图片预览仅 VM 轨（媒体管线）" { style: "text-[10px] text-muted-foreground" }
+                                    }
+                                }
+                            }
+                        }
+                        if .preview_kind == "dir" {
+                            col {
+                                style: "p-3 gap-1"
+                                if .preview_queue.len() > 0 {
+                                    text "统计中…" { style: "text-xs text-primary font-medium" }
+                                }
+                                row {
+                                    style: "w-full justify-between"
+                                    text "项目数" { style: "text-xs text-muted-foreground" }
+                                    text .preview_items_label { style: "text-xs font-mono text-foreground" }
+                                }
+                                row {
+                                    style: "w-full justify-between"
+                                    text "总大小" { style: "text-xs text-muted-foreground" }
+                                    text .preview_bytes_label { style: "text-xs font-mono text-foreground" }
+                                }
+                            }
+                        }
+                        if .preview_kind == "other" {
+                            col {
+                                style: "p-3 gap-2"
+                                row {
+                                    style: "w-full justify-between"
+                                    text "名称" { style: "text-xs text-muted-foreground" }
+                                    text .preview_f_name { style: "text-xs text-foreground font-medium max-w-[10rem] truncate" }
+                                }
+                                row {
+                                    style: "w-full justify-between"
+                                    text "类型" { style: "text-xs text-muted-foreground" }
+                                    text .preview_f_type { style: "text-xs text-foreground" }
+                                }
+                                row {
+                                    style: "w-full justify-between"
+                                    text "大小" { style: "text-xs text-muted-foreground" }
+                                    text .preview_f_size { style: "text-xs font-mono text-foreground" }
+                                }
+                                row {
+                                    style: "w-full justify-between"
+                                    text "修改时间" { style: "text-xs text-muted-foreground" }
+                                    text .preview_f_date { style: "text-xs font-mono text-foreground" }
+                                }
+                                col {
+                                    style: "gap-1 w-full"
+                                    text "路径" { style: "text-xs text-muted-foreground" }
+                                    text .preview_f_path { style: "text-[10px] font-mono text-foreground/80 break-all" }
                                 }
                             }
                         }
@@ -952,6 +1069,10 @@ widget App {
             let sh = storage.get("fileman.show_hidden")
             if sh == "true" { .show_hidden = true }
             if sh == "false" { .show_hidden = false }
+
+            // PLAN-003：预览面板开关恢复
+            let pv = storage.get("fileman.preview_on")
+            if pv == "true" { .preview_on = true }
         }
 
         // ---- 延迟引导（首个 Tick；重 FS 活不在 Init 临界区内）----
@@ -959,6 +1080,43 @@ widget App {
         // 引导后 Tick 空转开销可忽略。）
         .Tick -> {
             .tick_count = .tick_count + 1
+
+            // ── PLAN-003：目录摘要 BFS（每拍 ≤40 目录；世代=根路径比对——
+            // 重选目录时 PreviewRun 已重置队列；看门狗 40 拍无进展终止）──
+            if .preview_kind == "dir" && .preview_queue.len() > 0 {
+                var budget int = 40
+                while budget > 0 && .preview_queue.len() > 0 {
+                    let d str = .preview_queue[0]
+                    var rest = []
+                    var qi int = 1
+                    while qi < .preview_queue.len() {
+                        rest.push(.preview_queue[qi])
+                        qi = qi + 1
+                    }
+                    .preview_queue = rest
+                    let raw str = fs.read_dir(d)
+                    if raw != "" && raw != "[]" {
+                        for e in json.parse(raw) {
+                            let nm2 str = "" + e
+                            let pp2 str = fs.join(d, nm2)
+                            let isd2 bool = file.is_dir(pp2)
+                            .preview_items = .preview_items + 1
+                            if isd2 {
+                                .preview_queue.push(pp2)
+                            } else {
+                                .preview_bytes = .preview_bytes + file.size(pp2)
+                            }
+                        }
+                    }
+                    budget = budget - 1
+                }
+                .preview_items_label = .preview_items.str() + " 项"
+                .preview_bytes_label = format_size(.preview_bytes)
+                if .preview_queue.len() == 0 {
+                    .preview_dir_root = ""
+                }
+            }
+
             if !.booted && .tick_count > 8 {
                 .booted = true
                 if .is_vm != "vm" {
@@ -1032,6 +1190,7 @@ widget App {
                 .d_trunc = false
                 .d_real_total = 6
                 .RefreshView()
+                .PreviewRun()
                 }
                 }
                 if .is_vm == "vm" {
@@ -1204,6 +1363,7 @@ widget App {
                     .last_snapshot_ms = time.now_ms() - ts0
                     .render_cap = 300
                     .RefreshView()
+                    .PreviewRun()
                 }
             }
             } else {
@@ -1314,6 +1474,7 @@ widget App {
                         .d_total = m_end
                         .render_cap = 300
                         .RefreshView()
+                        .PreviewRun()
                     }
                 }
             }
@@ -1947,6 +2108,93 @@ widget App {
             .confirm_multi_open = false
         }
 
+        // ══════════════════════════════════════════════════════════════
+        // PLAN-003：预览面板（选中焦点驱动；目录摘要 = Tick 驱动 BFS
+        // 分批——spawn 闭包捕获未证不走协程；世代判据 = BFS 根路径）
+        // ══════════════════════════════════════════════════════════════
+
+        .PreviewToggle -> {
+            .preview_on = !.preview_on
+            storage.set("fileman.preview_on", if .preview_on { "true" } else { "false" })
+            if .preview_on {
+                .PreviewRun()
+            }
+        }
+
+        .PreviewRun -> {
+            // 按焦点行分派（无焦点/未开 → 清空）
+            .preview_kind = ""
+            .preview_text = ""
+            .preview_text_note = ""
+            .preview_img = ""
+            .preview_items = -1
+            .preview_bytes = -1
+            .preview_items_label = ""
+            .preview_bytes_label = ""
+            .preview_f_name = ""
+            .preview_f_type = ""
+            .preview_f_size = ""
+            .preview_f_date = ""
+            .preview_f_path = ""
+            .preview_dir_root = ""
+            .preview_queue = []
+            .preview_stall = 0
+            if !.preview_on {
+                return
+            }
+            if .selected_id < 0 || .selected_id >= .files_view.len() {
+                .preview_kind = ""
+                return
+            }
+            let nm str = .files_view[.selected_id].name
+            let pth str = .files_view[.selected_id].path
+            let ext str = .files_view[.selected_id].file_ext
+            let tn str = .files_view[.selected_id].type_name
+            let sz int = .files_view[.selected_id].size
+            if .files_view[.selected_id].is_dir {
+                // 目录摘要：BFS 起点（Tick 每拍 40 目录推进）
+                .preview_kind = "dir"
+                .preview_items = 0
+                .preview_bytes = 0
+                .preview_dir_root = pth
+                .preview_queue = [pth]
+                return
+            }
+            if is_image_ext(ext) {
+                .preview_kind = "image"
+                if .is_vm == "vm" {
+                    // 512 大 rendition（__vmOnly 桩守卫——vue 轨降级卡）
+                    .preview_img = image.thumb(pth, 512)
+                }
+                return
+            }
+            if tn == "文档" || tn == "代码" {
+                .preview_kind = "text"
+                if .is_vm == "vm" {
+                    .preview_text = file.read_text_range(pth, 0, 8192)
+                    .preview_text_note = "前 8KB · 全文 " + format_size(sz)
+                } else {
+                    // PLAN-003：vue 轨走 HTTP 端点（api.at fs_text）
+                    let th = fs_text(pth)
+                    if th.ok {
+                        .preview_text = th.head
+                        .preview_text_note = "前 8KB · 全文 " + format_size(th.total)
+                    } else {
+                        .preview_text = ""
+                        .preview_text_note = "预览不可用"
+                    }
+                }
+                return
+            }
+            // other：元信息卡（handler 期预取——模板零下标表达式）
+            .preview_kind = "other"
+            .preview_f_name = nm
+            .preview_f_type = tn
+            .preview_f_size = .files_view[.selected_id].size_str
+            .preview_f_date = .files_view[.selected_id].date
+            .preview_f_path = pth
+        }
+
         // 表头全选勾选框（全选 ⇄ 清空）
         .HeaderSelToggle -> {
             if .sel_count > 0 && .sel_count == .d_total {
@@ -2101,10 +2349,11 @@ widget App {
             .selected_id = id
             var n int = .files_view.len()
             if id >= 0 && id < n {
-                let r = .files_view[id]
-                .selected_name = r.name
-                .selected_info = "选定: " + r.name + " (" + r.size_str + ")"
+                .selected_name = .files_view[id].name
+                .selected_info = "选定: " + .files_view[id].name + " (" + .files_view[id].size_str + ")"
             }
+            // PLAN-003：选中焦点驱动预览
+            .PreviewRun()
         }
 
         .OpenItem(id) -> {
