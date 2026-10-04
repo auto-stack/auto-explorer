@@ -350,6 +350,39 @@ def seed_workdir(workdir):
         f.write("hidden")
 
 
+def trigger_tolerant(mcp, state, event, expect_field, expect_value, timeout=30):
+    """容错触发：大状态下 fixture ack 常超 2s 窗（仪器墙），handler 照跑——
+    触发后轮询期望状态收敛即算生效（PLAN-001 T-06）。"""
+    try:
+        mcp.trigger(state, event)
+    except RuntimeError:
+        pass
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        time.sleep(1.0)
+        try:
+            raw = mcp.state(expect_field).get(expect_field, "")
+            if str(expect_value) in raw:
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def read_row_names(mcp, count):
+    """按显示序读行名（CtxSelect 探测 selected_info——PLAN-659 适配形态）。"""
+    names = []
+    for i in range(count):
+        mcp.trigger({"ctx_id": i}, "CtxSelect")
+        time.sleep(0.12)
+        si = mcp.state_str("selected_info")
+        if si.startswith("选定: "):
+            names.append(si[4:].split(" (")[0])
+        else:
+            names.append(None)
+    return names
+
+
 def run_suite(mcp, workdir, result):
     data = os.path.join(workdir, "data")
 
@@ -532,8 +565,112 @@ def run_suite(mcp, workdir, result):
         si = mcp.state_str("selected_info")
         result.check("T12 选定状态", "notes.txt" in si, si)
 
+    # ── T15: 交互零触盘 + 派生预算（PLAN-001 AC-01）────────────────────
+    print('\n[T15] 交互零触盘（应用内计时口径）')
+    try:
+        seq = ["SortByName", "SortBySize", "SortByDate", "SortByType",
+               "ToggleHidden", "ToggleHidden", "SortByName", "SortBySize", "SortByName"]
+        for ev in seq:
+            mcp.trigger({"booted": True}, ev)
+            time.sleep(0.15)
+        result.check("T15 九连交互计数稳定", mcp.state_int("item_count_str") == 4,
+                     mcp.state("item_count_str").get("item_count_str", ""))
+        st = mcp.state("last_derive_ms")
+        m = re.search(r"-?\d+", st.get("last_derive_ms", "999"))
+        dm = int(m.group(0)) if m else 999
+        result.check("T15 应用内派生 ≤100ms", dm <= 100, f"last_derive_ms={dm}")
+    except Exception as e:
+        result.check("T15 交互零触盘", False, str(e)[:80])
+
+    # ── T17: 排序正确性（PLAN-001 AC-03）──────────────────────────────
+    print('\n[T17] 排序正确性')
+    try:
+        sd = mcp.state("sort_dir").get("sort_dir", '"asc"')
+        if sd == '"desc"':
+            mcp.trigger({"booted": True}, "SortByName")
+            time.sleep(0.3)
+        names = read_row_names(mcp, 4)
+        result.check("T17 name 升序", names == ["nested", "config.toml", "notes.txt", "photo.png"], str(names))
+        mcp.trigger({"booted": True}, "SortByName")
+        time.sleep(0.3)
+        names = read_row_names(mcp, 4)
+        result.check("T17 name 降序", names == ["nested", "photo.png", "notes.txt", "config.toml"], str(names))
+        mcp.trigger({"booted": True}, "SortBySize")
+        time.sleep(0.3)
+        names = read_row_names(mcp, 4)
+        result.check("T17 size 升序", names == ["nested", "config.toml", "notes.txt", "photo.png"], str(names))
+        mcp.trigger({"booted": True}, "SortBySize")
+        time.sleep(0.3)
+        names = read_row_names(mcp, 4)
+        result.check("T17 size 降序", names == ["nested", "photo.png", "notes.txt", "config.toml"], str(names))
+        result.check("T17 目录恒先", names and names[0] == "nested", str(names))
+        mcp.trigger({"booted": True}, "SortByName")
+        time.sleep(0.2)
+        sd2 = mcp.state("sort_dir").get("sort_dir", '"asc"')
+        if sd2 == '"desc"':
+            mcp.trigger({"booted": True}, "SortByName")
+            time.sleep(0.2)
+    except Exception as e:
+        result.check("T17 排序正确性", False, str(e)[:80])
+
+    # ── T16: 渐进渲染扩窗（PLAN-001 AC-02/AC-05）────────────────────────
+    print('\n[T16] 渐进渲染（mkbig 2500）')
+    try:
+        from mkbig import mkbig as _mkbig
+        big_dir = _mkbig(2500, workdir)
+        try:
+            mcp.fixture({"addr": big_dir}, "AddrGo")
+        except RuntimeError:
+            pass  # 仪器墙：handler 照跑，下方轮询收敛
+        time.sleep(1.5)
+        for _ in range(20):
+            if mcp.state_int("view_total") == 2500:
+                break
+            time.sleep(1.0)
+        vt = mcp.state_int("view_total")
+        open_ids = mcp.find_ids(kind="button", label="打开")
+        result.check("T16 view_total=2500", vt == 2500, f"view_total={vt}")
+        result.check("T16 首屏窗口 ≤310 行", len(open_ids) <= 310, f"rows={len(open_ids)}")
+        result.check("T16 状态栏全量计数", "2500" in mcp.state_str("item_count_str"),
+                     mcp.state_str("item_count_str"))
+        trigger_tolerant(mcp, {"booted": True}, "GrowRender", "view_total", "2500", timeout=10)
+        time.sleep(1.5)
+        open_ids2 = mcp.find_ids(kind="button", label="打开")
+        result.check("T16 扩窗后行数增长", len(open_ids2) > len(open_ids),
+                     f"{len(open_ids)} -> {len(open_ids2)}")
+        result.check("T16 view_total 恒定", mcp.state_int("view_total") == 2500,
+                     str(mcp.state_int("view_total")))
+    except Exception as e:
+        result.check("T16 渐进渲染", False, str(e)[:80])
+
+    # ── T18: 超大目录 cap 分层（PLAN-001 AC-02 大目录维度）──────────────
+    print('\n[T18] 超大目录 SNAP_CAP=8000')
+    try:
+        from mkbig import mkbig as _mkbig
+        huge_dir = _mkbig(9000, workdir)
+        try:
+            mcp.fixture({"addr": huge_dir}, "AddrGo")
+        except RuntimeError:
+            pass  # 仪器墙：handler 照跑，下方轮询收敛
+        ok = False
+        for _ in range(30):
+            time.sleep(1.0)
+            if mcp.state_int("view_total") == 8000:
+                ok = True
+                break
+        result.check("T18 view_total=8000（cap 生效）", ok,
+                     f"view_total={mcp.state_int('view_total')}")
+        cnt = mcp.state_str("item_count_str")
+        result.check("T18 截断标注在场", "已加载前 8000" in cnt, cnt)
+        result.check("T18 d_real_total=9000", mcp.state_int("d_real_total") == 9000,
+                     str(mcp.state_int("d_real_total")))
+    except Exception as e:
+        result.check("T18 超大目录 cap", False, str(e)[:80])
+
     # ── T14: 错误路径错误态（AC-06 残留补证）─────────────────────────────────
     print("\n[T14] 错误路径错误态")
+    # PLAN-001 T-06：T15-T18 离开后复位到 testdata（坏路径测试前提）
+    nav_to(mcp, data)
     bad = os.path.join(data, "no-such-dir-xyz")
     cur = nav_to(mcp, bad)
     result.check("T14 坏路径 cwd 不变", cur == data, f"{cur!r} != {data!r}")
