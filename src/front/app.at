@@ -63,7 +63,7 @@ widget App {
         // PLAN-002：多选与键盘面
         ToggleSel(int), SelectAll, ClearSel, InvertSel, UpdateSelLabel, SelRangeRun,
         NavUp, NavDown, NavHome, NavEnd, NavPgUp, NavPgDn, NavSelUp, NavSelDown,
-        CopySel, CutSel, PasteInto, PasteLoop, PasteOne(str), PasteFinish,
+        CopySel, CutSel, PasteInto, PasteLoop, PasteOne(str), PasteFinish, XferCancel, XferFinish,
         DeleteSel, ExecuteDeleteSel, CancelDeleteSel, StartRenameSelected, ClearSelFilter,
         // PLAN-002：粘贴冲突三选
         PasteConflictResolve(str), PasteConflictToggleAll, HeaderSelToggle,
@@ -224,6 +224,20 @@ widget App {
         var paste_conflict_name str = ""
         var paste_conflict_apply_all bool = false
         var paste_all_choice str = ""  // apply_all 生效后的记忆选择
+
+        // ---- PLAN-006：分片传输管线（大目录复制不冻结）----
+        // 全标量/平行数组（B12 纪律：记录墙免疫）。PasteOne 对 >200 文件
+        // 目录展开为文件级作业队列（src="" 标记 mkdir 作业），Tick 每拍
+        // 执行 ≤20 个单文件 native 拷贝——VM 线程不被长占，导航/排序
+        // 照常响应；状态栏进度段可见可控（取消即停，已完成部分保留）。
+        var x_src = []                 // 作业源路径（"" = mkdir 作业）
+        var x_dst = []                 // 作业目标路径（与 x_src 平行）
+        var x_done int = 0             // 游标（< x_total 未完成）
+        var x_total int = 0
+        var x_bytes int = 0            // 已传字节（进度串用）
+        var x_active bool = false
+        var x_cancel bool = false
+        var x_label str = ""           // 预计算进度串（模板零调用）
 
         // ---- PLAN-002：多选删除确认（分级文案）----
         var confirm_multi_open bool = false
@@ -978,6 +992,17 @@ widget App {
 
                 row {
                     style: row_gap3
+                    // PLAN-006：传输进度段（x_label 非空唱现）+ 取消钮
+                    if .x_label != "" {
+                        text .x_label {
+                            style: "text-primary font-medium text-[11px]"
+                        }
+                        button (text: "取消", variant: "ghost") {
+                            onclick: .XferCancel
+                            style: "text-xs px-2 py-0.5 rounded bg-destructive/15 text-destructive font-semibold hover:bg-destructive/25"
+                        }
+                        text "|" { style: "text-border" }
+                    }
                     if .clipboard_name != "" {
                         text .clipboard_label {
                             style: "text-primary font-medium text-[11px]"
@@ -1193,6 +1218,31 @@ widget App {
                 .RefreshView()
             }
 
+            // ── PLAN-006：分片传输执行臂（每拍 ≤20 作业，单文件 native
+            // 拷贝——VM 指令开销可忽略；取消下拍停臂收尾，已完成部分
+            // 保留）──
+            if .x_active {
+                if .x_cancel {
+                    .XferFinish()
+                } else {
+                    var xk int = 20
+                    while xk > 0 && .x_done < .x_total {
+                        if .x_src[.x_done] == "" {
+                            file.create_dir(.x_dst[.x_done])
+                        } else {
+                            fs.copy_recursive(.x_src[.x_done], .x_dst[.x_done])
+                            .x_bytes = .x_bytes + file.size(.x_src[.x_done])
+                        }
+                        .x_done = .x_done + 1
+                        xk = xk - 1
+                    }
+                    .x_label = "复制中 " + .x_done.str() + "/" + .x_total.str() + " · " + format_size(.x_bytes)
+                    if .x_done >= .x_total {
+                        .XferFinish()
+                    }
+                }
+            }
+
             // ── PLAN-003：目录摘要 BFS（每拍 ≤40 目录；世代=根路径比对——
             // 重选目录时 PreviewRun 已重置队列；看门狗 40 拍无进展终止）──
             if .preview_kind == "dir" && .preview_queue.len() > 0 {
@@ -1229,7 +1279,10 @@ widget App {
                 }
             }
 
-            if !.booted && .tick_count > 8 {
+            // PLAN-006：引导收缩 8-tick(2s)→3-tick(750ms)——iced boot 竞态
+            // 的历史保守值在其余路径稳定后收缩；回归门 = 套件 ≥3 轮全绿，
+            // 任何一轮 boot 挂起/超时即回落 8（PLAN-016 实证值）。
+            if !.booted && .tick_count > 3 {
                 .booted = true
                 if .is_vm != "vm" {
                 // PLAN-684 rev7：vue 轨先试后端读盘（gallery back-proxy VM
@@ -2102,6 +2155,12 @@ widget App {
                 toast("写操作仅在 VM 轨可用 — 请使用 auto run -r vm")
                 return
             }
+            // PLAN-006：传输进行中禁再启（作业队列游标式消费，重入会
+            // 重复入队/游标错乱——toast 指引取消或等待）
+            if .x_active {
+                toast("传输进行中，请等待完成或取消后再粘贴")
+                return
+            }
             if .paste_queue.len() == 0 {
                 toast("剪贴板为空")
                 return
@@ -2165,7 +2224,77 @@ widget App {
                 .paste_renamed = .paste_renamed + 1
             }
             if op == "copy" {
-                fs.copy_recursive(src, target)
+                if file.is_dir(src) {
+                    // PLAN-006 分片判定：目录复制先物化文件作业清单
+                    // （read_dir BFS——mkdir 作业随发现序前置、文件作业
+                    // 随序入队，父目录天然去重单趟建成）。≤200 文件快
+                    // 路径直接整目录 native 拷（现行为）；>200 展开
+                    // 入 xfer 队列 Tick 分片执行；>2 万作业超限回落
+                    // 直接拷（诚实 toast——冻结但可达，8k cap 同哲学）。
+                    // 前缀手术在归一分隔符空间做（walk/join 输出分隔符
+                    // 随 OS，std::fs 两侧均收）。
+                    let srcn str = src.replace("\\", "/")
+                    let tgtn str = target.replace("\\", "/")
+                    var j_src = []
+                    var j_dst = []
+                    var dirq = [srcn]
+                    var fcount int = 0
+                    var jcount int = 0
+                    var qi int = 0
+                    var over bool = false
+                    while qi < dirq.len() && !over {
+                        let dn str = dirq[qi]
+                        j_src.push("")
+                        j_dst.push(tgtn + dn.sub(srcn.len(), dn.len()))
+                        jcount = jcount + 1
+                        let raw2 str = fs.read_dir(dn)
+                        if raw2 != "" && raw2 != "[]" {
+                            var entries = []
+                            for en in json.parse(raw2) {
+                                entries.push(en)
+                            }
+                            var ei int = 0
+                            while ei < entries.len() && !over {
+                                let pn str = dn + "/" + ("" + entries[ei])
+                                if file.is_dir(pn) {
+                                    dirq.push(pn)
+                                } else {
+                                    fcount = fcount + 1
+                                    jcount = jcount + 1
+                                    j_src.push(pn)
+                                    j_dst.push(tgtn + pn.sub(srcn.len(), pn.len()))
+                                }
+                                if jcount >= 20000 {
+                                    over = true
+                                }
+                                ei = ei + 1
+                            }
+                        }
+                        qi = qi + 1
+                    }
+                    if fcount > 200 && !over {
+                        // 分片入队（追加式——同批多目录次第展开；展开全程
+                        // 同步、Tick 不交错，x_done 游标保持不动即为正确。
+                        // mkdir 作业在各自子树文件作业之前）
+                        var xi int = 0
+                        while xi < j_src.len() {
+                            .x_src.push(j_src[xi])
+                            .x_dst.push(j_dst[xi])
+                            xi = xi + 1
+                        }
+                        .x_total = .x_src.len()
+                        .x_active = true
+                        .x_cancel = false
+                        .x_label = "复制中 " + .x_done.str() + "/" + .x_total.str() + " · " + format_size(.x_bytes)
+                    } else {
+                        if over && fcount > 200 {
+                            toast("目录过大（超过 2 万文件），整目录复制中…")
+                        }
+                        fs.copy_recursive(src, target)
+                    }
+                } else {
+                    fs.copy_recursive(src, target)
+                }
             } else {
                 fs.rename(src, target)
             }
@@ -2196,13 +2325,46 @@ widget App {
             if .paste_renamed > 0 {
                 msg = msg + "，保留两者 " + .paste_renamed.str()
             }
-            toast.success(msg)
+            // PLAN-006：分片传输尚在途时不抢报——传输臂收尾 toast 汇总
+            if !.x_active {
+                toast.success(msg)
+            }
             if .clipboard_op == "cut" {
                 .clipboard_op = ""
                 .clipboard_label = ""
                 .paste_queue = []
             }
             .ClearSel()
+            .NavTo(.current_path)
+        }
+
+        // ---- PLAN-006：传输管线取消与收尾 ----
+        .XferCancel -> {
+            if .x_active {
+                .x_cancel = true
+            }
+        }
+
+        // 取消（x_cancel 置位）与完成（x_done 追平）共用收尾——已完成
+        // 部分保留（事务式删除不做），toast 报明完成量；清态 + 刷新。
+        .XferFinish -> {
+            let cancelled bool = .x_cancel
+            .x_active = false
+            var msg str = ""
+            if cancelled {
+                msg = "已取消复制：完成 " + .x_done.str() + "/" + .x_total.str() + " 项 · " + format_size(.x_bytes)
+                toast(msg)
+            } else {
+                msg = "复制完成 " + .x_total.str() + " 项 · " + format_size(.x_bytes)
+                toast.success(msg)
+            }
+            .x_label = ""
+            .x_src = []
+            .x_dst = []
+            .x_done = 0
+            .x_total = 0
+            .x_bytes = 0
+            .x_cancel = false
             .NavTo(.current_path)
         }
 
@@ -2303,9 +2465,19 @@ widget App {
             let origin str = .current_path
             var all = []
             let raw str = fs.walk(origin)
+            // PLAN-006 / F-V3 收口：扫描上限 60000 条路径（60k × ~40 指令
+            // ≈ 2.4M，距 10M 预算墙余量充足）——巨树不再预算中止静默无
+            // 操作，截断诚实标注（capped_scan）。
+            var capped_scan bool = false
             if raw != "" {
+                var mi int = 0
                 for e in json.parse(raw) {
+                    if mi >= 60000 {
+                        capped_scan = true
+                        break
+                    }
                     all.push(e)
+                    mi = mi + 1
                 }
             }
             var names_l = []
@@ -2366,10 +2538,14 @@ widget App {
             .selected_id = -1
             .selected_name = ""
             .selected_info = "未选中任何项目"
-            if capped {
-                .search_label = "子树命中 " + hits.str() + " 项（达 2000 上限，请收敛关键词）"
+            if capped_scan {
+                .search_label = "子树命中 " + hits.str() + " 项（扫描达 60000 条上限，请缩小范围）"
             } else {
-                .search_label = "子树命中 " + hits.str() + " 项（Esc 退出）"
+                if capped {
+                    .search_label = "子树命中 " + hits.str() + " 项（达 2000 上限，请收敛关键词）"
+                } else {
+                    .search_label = "子树命中 " + hits.str() + " 项（Esc 退出）"
+                }
             }
             // PLAN-005：自适应内联派发（搜索命中 ≤2000 恒内联；阈值口径
             // 与导航臂同源）
@@ -3065,11 +3241,19 @@ widget App {
         }
 
         // ---- R5：行 hover 高亮驱动 ----
+        // PLAN-006：大目录门控——>2000 项时 mousemove 驱动的 hover 状态
+        // 翻转引发全量行重渲染，门控为 no-op（小目录高亮不变）。
         .RowHover(id) -> {
+            if .d_total > 2000 {
+                return
+            }
             .hover_id = id
         }
 
         .RowLeave -> {
+            if .d_total > 2000 {
+                return
+            }
             .hover_id = -1
         }
 
