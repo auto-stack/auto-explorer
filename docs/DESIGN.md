@@ -359,6 +359,36 @@ fs_util 纯函数 `natcmp(a str, b str) int`（约 60 行 while 扫描，无分�
   （PLAN-659 严格预检）；popover 打开态用 ctx_id 状态直喂等价驱动
   （open 绑定态）。
 
+### 13.8 PLAN-006 执行内裁决回写（2026-10-05）
+
+- **§4 分片展开 = read_dir BFS（非 fs.walk）**：VM 轨 `fs.walk`
+  （auto.file.walk）walkdir 过滤只产**文件**路径（无目录、无根、分隔符
+  随 OS）——父目录链与 mkdir 作业无从推导；且 walk 输出去重父目录需
+  O(n²) 线性扫描（2 万文件 × 数千父目录远超 10M 预算）。改 `fs.read_dir`
+  BFS：mkdir 作业随子目录发现序前置、文件作业随序入队，父目录天然去重
+  单趟建成；前缀手术在归一分隔符空间做（`Str.replace("\\","/")`，两侧
+  均为源路径派生，构造性无 mismatch）。≤200/超 2 万回落直接
+  copy_recursive 语义不变。
+- **x_* 新字段的验收观测通道（R10 债下的 verify_p6 范式）**：state 桥
+  读新字段不可靠（fixture 写可见、handler 写不落，§13.7/R10）——
+  verify_p6 主通道 = **渲染投影**（进度串文本/取消钮在场 ⇔ x_label
+  非空 ⇔ 传输臂活跃；vtree/find 读渲染树即 VM 活状态）+ **磁盘效应**
+  （目标文件计数）；x_* state 读仅旁证。判活禁用 `find(label="取消")`
+  ——closed 态 alert-dialog 取消钮亦在树（§13.7 常驻 2 口径），恒真
+  污染。
+- **Tick 节奏实测**：`interval` 标称 250ms，实测 Tick ≈ 40-125ms/拍
+  （1203 作业传输 ~2.5-4s，2403 作业 ~5-11s 波动）——boot 3-tick 实际
+  ≈ 375ms；传输/引导相关的时序断言一律以状态收敛为准，不按标称拍数
+  折算墙钟。
+- **AC-04 启动口径**：`tick_count==3` 断言不可外部观测（tick 计数
+  boot 后继续累加）——落证 = 防挂起粗门（MCP 起至 booted ≤6s，实测
+  基线 ~4.4s，含窗口/VM 初始化）+ Tick 心跳 + 套件 ×3 轮全绿
+  （boot 竞态回归真门）。
+- **AC-05 hover 门控驱动形态**：RowHover(int) 不可经 fixture 注入
+  （int 载荷限制，§13.7 同病）——用 RowLeave（无参）+ hover_id 状态
+  直喂双向断言（大目录门控保持 / 小目录正常复位）；RowHover 与
+  RowLeave 门控为同构首行，代码审计补 RowHover 面。
+
 ## 14. 风险与验证点登记
 
 | # | 风险 | 缓解 |

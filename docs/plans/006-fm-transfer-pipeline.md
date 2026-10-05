@@ -1,17 +1,17 @@
 ---
 plan_id: PLAN-006
-status: drafting               # drafting → executing → execution_done → reviewed → archived
+status: execution_done         # drafting → executing → execution_done → reviewed → archived
 feature_name: fm-transfer-pipeline
 author: [agent]
 created_at: 2026-10-05
 updated_at: 2026-10-05
 plan_revision: 1
-current_step: 0
+current_step: 6
 total_steps: 6
 
 # /auto-plan:review 结束时填写：
 supersedes_spec_components: []
-new_spec_components: []       # 预挂 SD-0061..0064（SPEC §4/§1.10/新注记）
+new_spec_components: [SD-0061, SD-0062, SD-0063]   # SPEC §4/§1.9/§1 注记（实际落点）
 touched_goals: []
 
 affects: [src/front/app.at, tests/]
@@ -202,26 +202,96 @@ RowHover/RowLeave：d_total > 2000 门控
   文件：src/front/app.at
   验证：verify_p6（AC-01/AC-02 主体）。
   → AC-01/AC-02
+  [✅ 已完成 2026-10-05] x_* 全标量状态 + PasteOne 展开臂 + Tick 传输
+  臂（每拍 ≤20 作业）+ 状态栏进度段/取消钮 + XferCancel/XferFinish。
+  **执行内调整（等效实现，证据在档）**：展开物化由 `fs.walk` 改
+  `fs.read_dir` BFS——VM 轨 walk（auto.file.walk）walkdir 过滤只产
+  文件路径（无目录无根），父目录链无从推导且去重 O(n²) 超预算；BFS
+  mkdir 前置/天然去重/单趟建成（DESIGN §13.8）。验证：verify_p6
+  **21/21**（AC-01 交互活性 + 磁盘 2400/2400 + 抽样一致；AC-02 进度
+  单调 + 取消部分保留不再增长）。
+  → AC-01/AC-02
 - **T-02** 快路径与并发防护（≤200 直接；x_active 期间禁再启）
   验证：verify_p6 快路径 + 重复粘贴 toast。
+  → AC-01
+  [✅ 已完成 2026-10-05] ≤200 快路径直拷 + 2 万作业上限回落（诚实
+  toast）+ PasteInto x_active 门 + PasteFinish 让报。toast 断言面不可
+  达（renderer 层）以代码审计代偿。验证：verify_p6 快路径 2 断言 +
+  并发防护 2 断言（分母不变 + 无新增文件）。
   → AC-01
 - **T-03** 搜索扫描上限（F-V3）
   文件：src/front/app.at（RunTreeSearch）
   验证：guard 审计 + verify_p4 回归。
   → AC-03
+  [✅ 已完成 2026-10-05] 物化循环 60000 截断 + capped_scan 标注
+  （"扫描达 60000 条上限，请缩小范围"）；for-in+break 形态（F-8：
+  parse 结果禁 len/索引）。guard 在场 = app.at RunTreeSearch
+  capped_scan 分支（源审计）。运行时巨树代偿口径不变（成本论证在
+  测试设计）。验证：verify_p6 搜索回归 2 断言（命中正确 + 无误标）；
+  verify_p4 全绿见 T-05。
+  → AC-03
 - **T-04** 启动收缩 + hover 门控
   文件：src/front/app.at
   验证：verify_p6 启动/hover 断言 + 套件 ×3 轮。
   → AC-04/AC-05
+  [✅ 已完成 2026-10-05] `tick_count > 8` → `> 3`；RowHover/RowLeave
+  首行 `d_total > 2000` 门控。执行内口径调整：tick_count==3 不可外部
+  观测（boot 后继续累加）→ 防挂起粗门（booted ≤6s，实测基线 ~4.4s
+  含窗口初始化）+ Tick 心跳 + 套件 ×3 全绿真门；RowHover(int) 不可
+  注入（int 载荷限制）→ RowLeave 无参 + hover_id 状态直喂双向断言
+  （同构首行 + 代码审计补面，DESIGN §13.8）。验证：verify_p6 启动
+  3 断言 + hover 3 断言（含大目录 2500 就位）；套件 ×3 见 T-05。
+  → AC-04/AC-05
 - **T-05** 全量回归电池
   验证：desktop_mcp + verify_p2/p3/p4 + vue 冒烟。
+  → AC-06
+  [✅ 已完成 2026-10-05] desktop_mcp ×3 轮全 **78/78**（boot 收缩
+  回归门达成——AC-04 真门）+ verify_p2 **12/12** + verify_p3 **10/10**
+  + verify_p4 **11/11** + verify_p6 **21/21**（独立两轮；电池背靠背
+  轮内 20/21 为负载时机抖动，复跑即绿——断言窗在系统高载下收紧，
+  非应用缺陷）+ vue codegen 冒烟（最终树：进度段/取消钮/XferCancel
+  均生成 ×8 引用；tsc 错误集 **16 条与 005 基线全等**，零新增类——
+  vue=调试轨非阻断在册口径；build 副产物 deps/ 已清理，在册债不
+  复发）。
   → AC-06
 - **T-06** 文档同步
   文件：SPEC.md（SD-0061..0063）、README、DESIGN §13.6 补记。
   → 全 AC 证据链
+  [✅ 已完成 2026-10-05] SPEC 头部增量注记 + §1 启动/hover 注记
+  （SD-0063）+ §1.9 扫描上限（SD-0062）+ §4 分片传输管线（SD-0061）
+  + §6 测试面 verify_p6；README 功能全景（001..006）+ 验收行；
+  DESIGN §13.8 执行内裁决回写（walk→BFS 调整、R10 观测范式、tick
+  节奏实测、AC-04/05 口径）。计划原文"§13.6 补记"沿既有 13.x 编号
+  惯例落为 §13.8（13.5=001/13.6=002-004/13.7=005/13.8=006）。
+  → 全 AC 证据链
 
 ## 复审记录
 
+- 2026-10-05 stage: work | PLAN-006 | rev 1 | outcome: **pass
+  （execution_done）** | code_commit: app 仓 v0.6-dev（基线 c6c875c；
+  在 apps/027-file-manager 检出按 AGENTS.md §2.1 直接执行——计划原
+  worktree 组环境被 §2.1 约定取代，同 005 先例）| task_ids: T-01
+  T-02 T-03 T-04 T-05 T-06 | evidence: verify_p6 **21/21** ×2 独立轮
+  （AC-01 传输中交互活性 + 磁盘 2400/2400 + 抽样一致；AC-02 进度单调
+  + 取消部分保留；快路径/并发防护/搜索回归/hover 双向/启动粗门）+
+  desktop_mcp ×3 轮 **78/78**（boot 收缩回归门）+ verify_p2 **12/12**
+  + verify_p3 **10/10** + verify_p4 **11/11** + vue codegen 冒烟
+  （新模板片生成；tsc 16 错误 ≡ 005 基线零新增类）| blockers:
+  无用户决策项 | 执行内发现与调整：① 展开物化 fs.walk → read_dir BFS
+  （VM walk 只产文件路径 + 父目录去重 O(n²) 超预算——等效实现，
+  DESIGN §13.8）；② verify_p6 观测通道走渲染投影+磁盘效应（R10 债
+  下新字段 state 桥不可靠；判活禁用「取消」钮标签——closed 模态
+  常驻污染）；③ Tick 实测 ≈40-125ms/拍（非标称 250ms），时序断言
+  一律状态收敛口径；④ AC-04 tick_count==3 不可外部观测 → 防挂起
+  粗门 + 心跳 + 套件 ×3 真门；AC-05 RowHover(int) 不可注入 →
+  RowLeave 无参等价驱动；⑤ 电池内 verify_p6 单轮 20/21 为负载时机
+  抖动（复跑 21/21，非应用缺陷）。| next: review。
+- 2026-10-05 stage: work（进入执行）。执行形态调整（沿 PLAN-005 同款
+  先例）：~~worktree 组 `.wt/os-006/auto-os`~~ → AGENTS.md §2.1
+  （2026-10-04 约定，优先于旧 app worktree 示例）收编 app 统一在
+  `apps/027-file-manager` 检出（submodule）的 `v0.6-dev` 分支直接执行；
+  完成后推送远端 + 更新父仓 gitlink + 切回 detached。基线 c6c875c
+  （PLAN-005 已落地归档，依赖满足）。
 - 2026-10-05 stage: new（auto-plan-new 起草，rev 1）。outcome: pass——
   001-005 复盘与授权齐备（用户指令在档），旗舰缺口（传输阻塞）证据
   充分。next: work（前置：PLAN-005 执行落地——同文件区域顺序约束）。

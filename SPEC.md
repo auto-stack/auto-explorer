@@ -10,6 +10,9 @@ AutoOS 桌面文件管理器（Finder / Explorer 双栏形态）。桌面事实�
 >
 > PLAN-023（2026-09）增量：网格图片缩略图（auto.image.thumb → Plan 547 媒体
 > 管线）+ 地址栏可伸缩坍缩（§1.5/§2.5）。
+>
+> PLAN-006（2026-10）增量：大目录复制分片传输管线（进度/取消，§4）+
+> 巨树搜索扫描上限（§1.9）+ 启动引导收缩与 hover 门控（§1）。
 
 ---
 
@@ -43,6 +46,13 @@ AutoOS 桌面文件管理器（Finder / Explorer 双栏形态）。桌面事实�
 - **性能口径**：验收一律应用内计时（`last_snapshot_ms/last_derive_ms`，
   handler 内 `time.now_ms` 差值）——MCP fixture 墙钟在大状态为仪器噪声
   （~3s 级）；实测 2000-6000 项快照+派生均 0ms（perf_check ALL PASS）。
+- **启动引导 3-tick（PLAN-006 / SD-0063）**：Tick 延迟引导阈值
+  `tick_count > 3`（≈750ms；原 8-tick/2s 为 PLAN-016 iced boot 竞态的
+  保守实证值，其余路径稳定后收缩）。回归门 = 套件 ≥3 轮全绿，任何一轮
+  boot 挂起/超时即回落 8。
+- **hover 大目录门控（PLAN-006 / SD-0063）**：`d_total > 2000` 时
+  RowHover/RowLeave 首行直接 return（mousemove 驱动的 hover 翻转引发
+  全量行重渲染；小目录高亮不变）。
 
 ## 1.5 地址栏与面包屑（PLAN-023）
 
@@ -84,8 +94,12 @@ AutoOS 桌面文件管理器（Finder / Explorer 双栏形态）。桌面事实�
 
 - 搜索范围 chip（本目录 ↔ 子树）；子树搜索 = 同步 fs.walk（native
   快）+ .at 过滤 + **结果即快照**（写入 d_* 平行数组——排序/扩窗/
-  多选/预览对结果免费生效）；逐词重跑；cap 2000 诚实标注；结果行
-  导航（目录直达/文件跳父）；Esc 退出回搜索根；真实导航退出结果态。
+  多选/预览对结果免费生效）；逐词重跑；命中 cap 2000 诚实标注；
+  **扫描 cap 60000（PLAN-006 / SD-0062，F-V3 收口）**：物化循环 60000
+  条路径截断（60k × ~40 指令 ≈ 2.4M，距 10M 预算墙余量充足），
+  `capped_scan` 标注"扫描达 60000 条上限，请缩小范围"——巨树不再
+  预算中止静默无操作；结果行导航（目录直达/文件跳父）；Esc 退出回
+  搜索根；真实导航退出结果态。
 - 收藏夹：工具栏星标 + 右键「收藏此目录」；侧栏收藏组；storage
   0x1E/0x1F 编码持久化 + Init 解码。
 - 自然排序：natural_key（数字段 6 位定宽）**缓存在快照**（d_nkey）。
@@ -161,6 +175,24 @@ AutoOS 桌面文件管理器（Finder / Explorer 双栏形态）。桌面事实�
 `file.remove_dir`，非空目录拒绝（toast；递归删除待 stdlib 提案）。
 写操作前 `file.exists` 重名门控；所有路径来自真实解析（canonical 后）。
 
+**分片传输管线（PLAN-006 / SD-0061，v0.7 F7 收口）**：目录复制先
+物化文件作业清单（`fs.read_dir` BFS——mkdir 作业随发现序前置、文件
+作业随序入队，父目录天然去重单趟建成；原 walk 方案因 VM walk 只产
+文件路径、父目录去重 O(n²) 超预算退役，见 DESIGN §13.8）：
+
+- `≤ 200` 文件（快路径）与单文件：直接 `fs.copy_recursive`（同步，
+  现行为）；剪切恒 `fs.rename`（单调用，不分片）。
+- `> 200` 文件：展开入 **xfer 队列**（平行数组 `x_src/x_dst`，
+  `x_src[i]==""` 标记 mkdir 作业）→ Tick 每拍执行 ≤20 作业（单文件
+  native 拷贝）——导航/排序/滚动等交互传输期间照常响应；状态栏
+  进度段（"复制中 N/M · 大小"，预计算串）+ 取消钮（`XferCancel`
+  置位、下拍停臂收尾，已完成部分保留，toast 报明完成量）。
+- 作业 **2 万上限**：超限回落直接 `copy_recursive` + 诚实 toast
+  "目录过大（超过 2 万文件），整目录复制中…"（冻结但可达，8k cap
+  同哲学）。
+- 并发防护：`x_active` 期间禁再启 PasteInto（toast 指引）；
+  `x_active` 时 PasteFinish 不抢报汇总（传输臂收尾 toast 统一汇报）。
+
 ## 5. 桌面互操作（T-07/T-08/T-09；协议 v1.7）
 
 - `__desktop_cmd` 总线（shell 同款状态面）写 `open_with	<app-id>	<path>`；
@@ -192,6 +224,9 @@ AutoOS 桌面文件管理器（Finder / Explorer 双栏形态）。桌面事实�
 
 - tests/desktop_mcp.py（VM 模式）：真实 FS 断言套件 + tests/testdata 副本
   （破坏性操作只对副本；地址栏 submit 跳转）。
+- verify_p2/p3/p4/p5/p6 短探针（p6 = PLAN-006 传输管线 + 响应硬化：
+  大目录复制交互活性/磁盘比对、进度单调、取消部分保留、并发防护、
+  快路径、hover 门控双向、搜索回归）。
 - open_with 端到端 = 桌面宿主级（acceptance bus 注入），证据
   auto-os docs/plans/evidence/016/t07-open-with-e2e.png。
 - 已知残留：MCP 服务器线程偶发静默失联（框架级，mock 时代同机制）；
