@@ -1,6 +1,6 @@
 ---
 plan_id: PLAN-005
-status: execution_done          # drafting → executing → execution_done → reviewed → archived
+status: reviewed                # drafting → executing → execution_done → reviewed → archived
 feature_name: fm-interaction-responsiveness
 author: [agent]
 created_at: 2026-10-04
@@ -271,6 +271,44 @@ popover-content 条件化（list 行）：
   ④ build 副产物 deps/ 遮蔽 vendor（在册债）——已清理；`auto build`
   tsc 门基线即坏（16 错误预存，vue=调试轨非阻断）。
   | next: review。
+
+- 2026-10-04 stage: review | PLAN-005 | rev 1 | outcome: **pass** |
+  reviewed_commit: **cc67e40**（detached 干净树即复审对象；diff 基线
+  da63875..cc67e40，8 文件全在计划 affects + 文档范围）|
+  base_commit: da63875 | dependency_revisions: auto-lang
+  D:/autostack/auto-lang 主检出（target/debug/auto.exe，零改动——本
+  计划授权不含 auto-lang）| spec_inputs: 本仓 SPEC.md @ cc67e40
+  （§1.10/§1/§3 增量即 SD-0051..0053 落档文本）| acceptance_results:
+  AC-01 pass（verify_p5 内联臂就位：AddrGo applied 即读 view_total=500
+  + last_snapshot_ms≥0 无哨兵 + last_derive_ms≤50；cc67e40 全新复跑）／
+  AC-02 pass（p5 cap 8000 + 截断标注 + 延迟臂哨兵 -77；套件 T18 同门）／
+  AC-03 pass（p5 首屏 checkbox 122 ≤130 + GrowRender 一档 620 增长 +
+  view_total 恒 2500；套件 T16 同门）／AC-04 pass（p5 条件挂载三态 +
+  套件 T19 四断言 + T5/T7/T9/T10 Ctx 家族功能链）／AC-05 pass（复审
+  全新电池：desktop_mcp **78/78** + verify_p2 **12/12** + p3 **10/10**
+  + p4 **11/11** + p5 **13/13** + codegen 冒烟 tsc 16=基线集零新增 +
+  `template v-if` 生成在档）| findings:
+  F-R1（informational，已裁定）：AC-01 仪器面迁移（last_nav_ms →
+  last_snapshot_ms 哨兵 + derive 预算）——VM state 桥新字段债致原
+  仪器不可测；零 Tick 延迟语义以分臂证据更直接落证，判等价非弱化，
+  记录链完整（plan/SPEC/DESIGN 三处）。
+  F-R2（low，merge 修正）：计划非目标承诺的 hover 节流 P2 债未登记
+  → 并入 merge 阶段 REQUIREMENTS.md 债表补行。
+  F-R3（low，merge 修正）：desktop_mcp.py 文件头 docstring 仍写
+  「+表头 1」，与 T1 实际校准（+常驻 2）不一致 → merge 文档收口顺带
+  修正。
+  F-R4（low，不阻断）：verify_p5 整趟重试未清零 PASS/FAIL 计数器
+  （重试场景打印 "15 pass" 虚高）——测试卫生项，后续工作面处理。
+  F-R5（low，不阻断，环境）：全部探针共享固定后端端口 17841，stale
+  后端进程致背靠背探针启动竞争（复审第一轮 p2 两连「MCP not up」+
+  套件两处 vtree 读降级；清理 stale 进程后全部复绿）——在册 MCP 框
+ 架病的放大面，建议后续探针加 stale 清理/端口错峰（债，不在本计划）。
+  | evidence: 复审复跑日志 $TMP/rev*_mcp.log、rev*_verify_p*.log、
+  rev_build.log（会话临时件；持久锚 = 本记录计数 + cc67e40 可重复
+  命令：python tests/desktop_mcp.py / tests/verify_p{2,3,4,5}.py /
+  auto build）；复审独立性声明：与实现同会话，判定全部由 cc67e40
+  干净树上的全新复跑工件重构（第一轮 2 失败经环境隔离实验证伪为
+  代码回归后复绿，两轮结果均如实记录）| next: merge。
 
 ## 待澄清事项
 
