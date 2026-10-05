@@ -20,8 +20,9 @@ ok 但 iced 侧未执行）会使其级联错位（实测漂移 C:\\$WinREAgent�
   新建文件/隐藏项）、搜索框、alert-dialog 模态输入与动作钮（创建/
   重命名/确认删除）、表头排序、视图切换钮（vtree 结构定位）。
 - 断言面：autoui_state 字段 + 磁盘落盘 + vtree 行计数（PLAN-005 起
-  checkbox 口径：每行恒一 checkbox + 表头 1——popover content 已条件
-  挂载，闭合行无菜单钮，「打开」钮计数面退役）。
+  checkbox 口径：每行恒一 checkbox + 常驻 2（表头全选 + 关闭态粘贴
+  冲突模态）——popover content 已条件挂载，闭合行无菜单钮，「打开」
+  钮计数面退役）。
 
 用例组：
 - T1: 启动结构（快捷访问/工具栏/主目录解析/in_desktop=false/计数与磁盘一致）
