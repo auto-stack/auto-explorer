@@ -1,6 +1,6 @@
 ---
 plan_id: PLAN-006
-status: execution_done         # drafting → executing → execution_done → reviewed → archived
+status: reviewed               # drafting → executing → execution_done → reviewed → archived
 feature_name: fm-transfer-pipeline
 author: [agent]
 created_at: 2026-10-05
@@ -298,6 +298,54 @@ RowHover/RowLeave：d_total > 2000 门控
   执行内验证点两个：boot 收缩的竞态回归（回落预案 8-tick）、搜索
   上限以 guard 审计代偿实测（成本论证在测试设计）。
 
+- 2026-10-12 stage: review | review_scope: **final** |
+  reviewer_identity: 与实现同会话（无分角色工作流）——独立性局限
+  声明在案，裁定从工件重构（全量 diff 走查 + 对抗 counterexample
+  矩阵 + delta 逐字一致性 + 测试脚本断言质量审计 + 独立复跑尝试），
+  不依赖执行摘要 | plan_id: PLAN-006 | plan_revision: 1 | outcome:
+  **pass** | worktree_path: apps/027-file-manager（submodule 检出，
+  §2.1 形态无计划 worktree）| branch: detached（v0.6-dev 线）|
+  reviewed_commit: **03a4ee0**（干净树，git status 零项）|
+  base_commit: c6c875c | dependency_revisions: auto-lang target/debug/
+  auto.exe **2026-10-06 构建**（执行期 10-05 二进制已被覆盖；主检出
+  HEAD 漂移至 897eb3491、他属会话活跃 WIP，本计划授权不含 auto-lang
+  零改动）| spec_inputs: 本仓 SPEC.md @ 03a4ee0（SD-0061..0063 已
+  落稿）| acceptance_results: **AC-01 pass**（verify_p6 交互活性 +
+  磁盘 2400/2400 + 抽样一致，21/21 ×2 独立轮）| **AC-02 pass**（进度
+  单调 + 取消停臂部分保留 + 不再增长 + 并发防护双断言）| **AC-03
+  pass**（guard 在场审计 + verify_p4 11/11 回归 + p6 搜索无误标）|
+  **AC-04 pass**（防挂起粗门 + Tick 心跳 + desktop_mcp ×3 78/78 真
+  门）| **AC-05 pass**（RowLeave 双向 + 同构首行审计）| **AC-06
+  pass**（全量电池 10-05 全绿记录 + vue 冒烟基线全等）| evidence:
+  diff 走查 c6c875c..31eab1f（6 文件全在 affects+文档范围；x_* 全
+  标量/B12；Tick 臂预算 ≤20；两万 cap 回落；取消语义部分保留；并发
+  门双处 PasteInto/PasteFinish）；counterexample 矩阵 12 项全过
+  （keepboth/冲突三选×大目录、空目录、取消先于首拍、双重取消、
+  双 cap 同触、多目录同批游标、2 万边界、vue 轨死臂、自身子树粘贴、
+  关闭态模态污染、同名列覆盖、目标=源）；delta 常量逐字核对
+  （200/60000/2000/3-tick/20k 与代码全等）；verify_p6 断言质量审计
+  （AC-05 触发丢失假通过被同会话小目录对照分支消解）| 复跑尝试：
+  10-12 独立复跑 desktop_mcp/verify_p4/verify_p6 三套件**全部无法
+  启动**——根因 = 当前 auto.exe 后端生成器回归（rust-workspace 生成
+  api.rs 发射 `use crate::db` + `crate::db::lock()` 但不发射 db.rs
+  模块，E0432/E0433 cargo 失败；生成物 mtime 04:08 = 复跑期再生成，
+  确定性非偶发）——10-05 执行期同代码全量绿 ⇒ 环境级上游回归，
+  非被审 diff 缺陷（见 F-1）| pending_closeout_gates: 无 merge 侧
+  新增门 | findings: **F-1（上游环境，阻断级但不属本计划——修复责
+  任 auto-lang 生成器）**：10-06 构建的 auto.exe 后端生成器对所有
+  thin-endpoint app 发射断裂后端（027 实证：VM 轨套件 10-12 全不
+  可启动；10-05 同代码全绿反证）——unblock：auto-lang 修复生成器
+  （补 db.rs 发射或去除 db 引用）后复跑任一套件即可证实恢复；本
+  计划验收证据以 10-05 基线在档（同 commit、记录工具链版本差异）。
+  **OBS-1（非阻塞观察，范围外）**：分片臂单文件拷贝失败（锁定/
+  权限）时回滚后每拍重试同批、无错误上报——002 直接路径同病，
+  建议后续计划统一传输错误面。**OBS-2（非阻塞，既有基线）**：
+  >2 万回落直拷路径对"粘贴进自身子树"保留 002 递归隐患（分片臂
+  物化先于写入、有界安全，反而更优）| next: merge。
+
 ## 待澄清事项
 
-- 无（两个验证点均带回落/代偿预案，属执行内裁决）。
+- F-1 上游生成器回归待 auto-lang 侧修复（本仓无动作；修复后复跑
+  任一套件可证实恢复——不阻断本计划 merge，验收证据 10-05 基线在
+  档且与被审 commit 绑定）。
+- 无其他（两个验证点均带回落/代偿预案，属执行内裁决）。
