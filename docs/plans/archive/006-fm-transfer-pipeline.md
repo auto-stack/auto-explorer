@@ -1,6 +1,6 @@
 ---
 plan_id: PLAN-006
-status: reviewed               # drafting → executing → execution_done → reviewed → archived
+status: archived               # drafting → executing → execution_done → reviewed → archived（终态）
 feature_name: fm-transfer-pipeline
 author: [agent]
 created_at: 2026-10-05
@@ -342,6 +342,25 @@ RowHover/RowLeave：d_total > 2000 门控
   建议后续计划统一传输错误面。**OBS-2（非阻塞，既有基线）**：
   >2 万回落直拷路径对"粘贴进自身子树"保留 002 递归隐患（分片臂
   物化先于写入、有界安全，反而更优）| next: merge。
+
+- 2026-10-12 stage: merge | **PLAN-006:r1** | outcome: **pass** |
+  checkpoints: **prepared**（delivery_commit = ed92f55——reviewed_commit
+  03a4ee0 的文档性后代，diff 仅计划复审记录 1 文件，impl/deps 零变化
+  核实；canonical delta = SD-0061..0063 已随 03a4ee0 落稿 SPEC.md §1/
+  §1.9/§4/§6 + README + DESIGN §13.8，常量与代码逐字核对过）→
+  **landed**（v0.6-dev @ origin tip ed92f55——本仓 §2.1 形态 landing =
+  v0.6-dev 线性推送，无独立 dev 分支、无 rebase、无 merge commit；
+  `git rev-parse origin/v0.6-dev` == ed92f55 核实）→
+  **ledger_refreshed**（canonical spec = 仓根 SPEC.md——da63875 记录
+  在案的 plan-homing 豁免惯例；app 仓计划不落 umbrella
+  `.autoos/specs.json`——PLAN-001..005 同款先例；merge 侧文档沉淀 =
+  REQUIREMENTS F7 P1 落地行 + §5.9 PLAN-006 增补 + §6 映射行 +
+  §7 H1 清账/H3 登记 + DESIGN 状态行 001-006）→ **archived**（git mv
+  docs/plans/archive/ + status: archived，actual-state 核查在档）→
+  **cleaned**（§2.1 形态无计划 worktree/开发分支——无清理对象，
+  wt-guard 不适用，n/a）| evidence: 收据各 checkpoint 均以 git 事实
+  核验（括注命令/路径）；REQUIREMENTS/DESIGN diff 见 merge 提交 |
+  completion_kind: **delivered** | next: 无（终态 archived）。
 
 ## 待澄清事项
 
